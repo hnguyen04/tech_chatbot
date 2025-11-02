@@ -1,0 +1,15 @@
+# Core HTTP and HTML parsing
+requests==2.31.0
+beautifulsoup4==4.12.3
+lxml==4.9.3
+selenium>=4.14.0,<5.0
+webdriver-manager>=4.0.0,<5.0
+
+# Data processing
+pandas==1.5.3
+
+# improve HTML parsing speed
+html5lib==1.1
+
+# Utilities
+tqdm==4.66.2
