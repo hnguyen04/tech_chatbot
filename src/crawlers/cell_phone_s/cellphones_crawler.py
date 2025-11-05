@@ -30,7 +30,7 @@ class CellphonesSCrawler:
 
         # 2. Lấy chi tiết từng bài (title, author, published_time, text, raw_html)
         detailed_articles = self.parser.fetch_all_details(
-            raw_articles, max_workers=max_workers, skip_images=skip_images
+            raw_articles, skip_images=skip_images
         )
         print(f"✅ Fetched details for {len(detailed_articles)} articles")
 

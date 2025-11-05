@@ -6,6 +6,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import requests
+import os
 from bs4 import BeautifulSoup
 
 class CellphonesSParser:
@@ -23,6 +24,7 @@ class CellphonesSParser:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()),options=chrome_options)
+        self.max_worker = os.cpu_count() - 1
 
     def fetch_articles(self):
         """Click 'Xem thêm' tối đa max_clicks lần, lấy tất cả url + title."""
@@ -107,7 +109,7 @@ class CellphonesSParser:
             print(f"⚠️ Lỗi khi fetch chi tiết {url}: {e}")
             return None
 
-    def fetch_all_details(self, articles: list[dict], skip_images=True, max_workers=8):
+    def fetch_all_details(self, articles: list[dict], skip_images=True):
         """
         Duyệt tất cả articles và fetch chi tiết.
         Trả về danh sách đã lọc None.
@@ -115,7 +117,7 @@ class CellphonesSParser:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         detailed_articles = []
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=self.max_worker) as executor:
             future_to_article = {executor.submit(self.fetch_article_detail, art): art for art in articles}
             for future in as_completed(future_to_article):
                 result = future.result()
