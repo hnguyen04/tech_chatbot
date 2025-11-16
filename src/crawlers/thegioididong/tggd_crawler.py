@@ -1,12 +1,11 @@
 import os
 import json
 from crawlers.thegioididong.tggd_article_parser import TGGDArticleParser
-from crawlers.thegioididong.tggd_api_client import TGGDApiClient 
-from crawlers.core.article_document import ArticleDocument  
+from crawlers.thegioididong.tggd_api_client import TGGDApiClient
+from crawlers.core.article_document import ArticleDocument
 
 
 class TGGDCrawler:
-    """Điều phối toàn bộ quá trình crawl dữ liệu từ thegioididong."""
 
     def __init__(
         self,
@@ -22,28 +21,43 @@ class TGGDCrawler:
         self.end_index = end_index
         self.output_dir = output_dir
 
+    # -------------------------------
+    # Orchestrate
+    # -------------------------------
+
     def run(self):
-        """Thực thi quá trình crawl."""
         os.makedirs(self.output_dir, exist_ok=True)
         all_docs = []
 
-        for i in range(self.start_index, self.end_index + 1):
-            print(f"📡 Fetching list page {i} ...")
-            html = self.api_client.fetch_articles_html(i)
-            articles = self.parser.parse_list(html)
-            print(f"✅ Found {len(articles)} articles on page {i}")
+        for page in range(self.start_index, self.end_index + 1):
+            print(f"📡 Crawling page {page} ...")
+            page_docs = self.parse_and_download(page)
+            all_docs.extend(page_docs)
 
-            print("🔍 Fetching article details (multi-thread)...")
-            detailed_articles = self.parser.fetch_all_details(
-                articles, max_workers=8, skip_images=True
-            )
+        output_file = self.save_output(all_docs)
+        print(f"💾 Saved {len(all_docs)} documents → {output_file}")
 
-            for art in detailed_articles:
-                doc = ArticleDocument(art).to_dict()
-                all_docs.append(doc)
+    # -------------------------------
+    # Steps
+    # -------------------------------
 
-        output_path = os.path.join(self.output_dir, "tgdd_articles.json")
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(all_docs, f, ensure_ascii=False, indent=2)
+    def parse_and_download(self, page: int) -> list[dict]:
+        html = self.api_client.fetch_articles_html(page)
+        articles = self.parser.parse_list(html)
+        print(f"  ✔ Found {len(articles)} items")
 
-        print(f"💾 Saved {len(all_docs)} docs → {output_path}")
+        detailed = self.parser.fetch_all_details(articles, max_workers=8, skip_images=True)
+        return self.build_documents(detailed)
+
+    def build_documents(self, articles: list[dict]) -> list[dict]:
+        docs = []
+        for art in articles:
+            doc = ArticleDocument.from_raw(art).to_dict()
+            docs.append(doc)
+        return docs
+
+    def save_output(self, docs: list[dict]) -> str:
+        path = os.path.join(self.output_dir, "tgdd_articles.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(docs, f, ensure_ascii=False, indent=2)
+        return path

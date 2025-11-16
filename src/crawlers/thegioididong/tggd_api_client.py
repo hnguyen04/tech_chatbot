@@ -16,7 +16,7 @@ class TGGDApiClient:
         payload = self.config.PAYLOAD_TEMPLATE.copy()
         payload["Index"] = str(index)
         response = requests.post(
-            self.config.BASE_URL,
+            self.config.ARTICLE_BASE_URL,
             headers=self.config.HEADERS,
             data=payload,
             timeout=10,

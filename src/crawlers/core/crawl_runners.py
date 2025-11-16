@@ -37,11 +37,13 @@ class CrawlRunner:
 if __name__ == "__main__":
     runner = CrawlRunner()
 
-    # tgdd = TGGDCrawler(
-    #     api_client=TGGDApiClient(),
-    #     parser=TGGDArticleParser()
-    # )
-    # runner.register(tgdd)
+    tgdd = TGGDCrawler(
+        api_client=TGGDApiClient(),
+        parser=TGGDArticleParser(),
+        start_index=1,
+        end_index=1
+    )
+    runner.register(tgdd)
 
     cellphones = CellphonesSCrawler(
         max_clicks=5,
