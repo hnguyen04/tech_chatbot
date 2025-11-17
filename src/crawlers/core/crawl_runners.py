@@ -1,6 +1,9 @@
 import sys
 import os
 import time
+import pandas as pd
+import json
+
 
 # Thêm src vào sys.path trước tất cả import
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -8,7 +11,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from crawlers.thegioididong.tggd_crawler import TGGDCrawler
 from crawlers.thegioididong.tggd_api_client import TGGDApiClient
 from crawlers.thegioididong.tggd_article_parser import TGGDArticleParser
+from crawlers.thegioididong.tggd_product_crawler import TGDDProductCrawler
 from crawlers.cell_phone_s.cellphones_crawler import CellphonesSCrawler
+from crawlers.cell_phone_s.cellphones_config import CellphoneSConfig
 
 class CrawlRunner:
     """Điều phối chạy nhiều crawler khác nhau."""
@@ -41,17 +46,24 @@ if __name__ == "__main__":
         api_client=TGGDApiClient(),
         parser=TGGDArticleParser(),
         start_index=1,
-        end_index=1
+        end_index=1,
+        should_crawl_products=True,
+        should_crawl_articles=True,
+        products_crawl_limit=5,
     )
     runner.register(tgdd)
 
-    cellphones = CellphonesSCrawler(
-        max_clicks=5,
-        wait_time=1.0
-    )
-    runner.register(cellphones)
+    # cellphones = CellphonesSCrawler(
+    #     max_clicks=5,
+    #     wait_time=1.0
+    # )
+    # runner.register(cellphones)
 
     # thêm crawler khác:
     # runner.register(FPTCrawler(api_client=FPTApiClient(), parser=FPTParser()))
 
+
     runner.run_all()
+
+
+    

@@ -10,9 +10,9 @@ class TGGDConfig:
         "ID": "1169",
         "Size": "1000",   # số bài / trang
     }
-
     DETAILED_API_HEADERS = {"User-Agent": "Mozilla/5.0"}
-
     BASE_ARTICLE_URL = "https://www.thegioididong.com/tin-tuc"
-
     DOMAIN = "thegioididong.com"
+    BASE_URL = "https://www.thegioididong.com"
+    PRODUCT_CATEGORY_LIST = ["dtdd", "laptop"]
+    # PRODUCT_CATEGORY_LIST = ["dtdd", "laptop", "tablet", "smart-watch", "phukien"]

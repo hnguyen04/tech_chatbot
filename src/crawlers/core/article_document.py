@@ -21,6 +21,7 @@ class ArticleMetadata:
     content_type: str = "article"
     version: int = 1
     published_time: str = ""
+    price: Optional[str] = None
 
 
 @dataclass
@@ -29,6 +30,7 @@ class ArticleContent:
     text: str
     summary: str = ""
     images: List[str] = field(default_factory=list)
+    product: Optional[dict] = None
 
 
 @dataclass
