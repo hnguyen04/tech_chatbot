@@ -5,6 +5,8 @@ from crawlers.thegioididong.tggd_api_client import TGGDApiClient
 from crawlers.thegioididong.tggd_product_crawler import TGDDProductCrawler
 from crawlers.core.article_document import ArticleDocument
 from crawlers.thegioididong.tggd_config import TGGDConfig
+from storage.s3_storage import S3Storage
+import datetime
 
 
 class TGGDCrawler:
@@ -18,8 +20,9 @@ class TGGDCrawler:
         should_crawl_articles: bool = False,
         start_index: int = 1,
         end_index: int = 3,
-        output_dir: str = "output",
+        output_dir: str = datetime.datetime.now().strftime("output/tggd_%Y%m%d_%H%M%S"),
         products_crawl_limit: int = 100000,
+        s3_storage: S3Storage = None,
     ):
         self.api_client = api_client or TGGDApiClient()
         self.parser = parser or TGGDArticleParser()
@@ -28,8 +31,9 @@ class TGGDCrawler:
         self.output_dir = output_dir
         self.should_crawl_products = should_crawl_products
         self.config = config or TGGDConfig()
-        self.should_crawl_articles = should_crawl_articles,
+        self.should_crawl_articles = should_crawl_articles
         self.products_crawl_limit = products_crawl_limit
+        self.s3_storage = s3_storage or S3Storage()
 
     # -------------------------------
     # Orchestrate
@@ -37,18 +41,19 @@ class TGGDCrawler:
 
     def run(self):
         os.makedirs(self.output_dir, exist_ok=True)
-        all_articles = []
         all_products = []
 
-        if self.should_crawl_articles:
+        if self.should_crawl_articles == True:
             # Crawl articles
             for page in range(self.start_index, self.end_index + 1):
                 print(f"📡 Crawling page {page} ...")
-                page_docs = self.parse_and_download(page)
-                all_articles.extend(page_docs)
-
-            articles_file = self.save_json(all_articles, "tgdd_articles.json")
-            print(f"✅ Saved {len(all_articles)} articles to {articles_file}")
+                try: 
+                    page_docs = self.parse_and_download(page)
+                    self.save_json(page_docs, f"tgdd_articles_page_{page}.json")
+                    print(f"✅ Saved {len(page_docs)} articles from page {page}")
+                except Exception as e:
+                    print(f"❌ Error occurred while crawling page {page}: {e}")
+                    pass
 
 
 
@@ -78,8 +83,13 @@ class TGGDCrawler:
         return [ArticleDocument.from_raw(art).to_dict() for art in articles]
 
     def save_json(self, docs: list[dict], filename: str) -> str:
-        """Save docs to JSON file, filename có thể truyền vào"""
+        if self.s3_storage:
+            key = f"{self.output_dir}/{filename}"
+            print(f"💾 Saving to S3: {key} ...")
+            return self.s3_storage.save_json(docs, key)
+
         path = os.path.join(self.output_dir, filename)
+        print(f"💾 Saving to local file: {path} ...")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(docs, f, ensure_ascii=False, indent=2)
         return path

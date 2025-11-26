@@ -14,3 +14,6 @@ html5lib==1.1
 
 # Utilities
 tqdm==4.66.2
+
+# AWS SDK
+boto3>=1.41.0,<1.42.0

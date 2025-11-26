@@ -164,16 +164,21 @@ class TGDDProductCrawler:
                 return len(self.driver.find_elements(By.CSS_SELECTOR, css)) > 0
             except Exception:
                 return False
-
-        self.driver.get(product_url)
-        wait = self.wait
-        base_site = self.config.DOMAIN
-
+        
         result = {
             "specs": {},
             "info_text": "",
             "images": []
         }
+        
+        try: 
+            self.driver.get(product_url)
+        except TimeoutException:
+            print(f"Timeout while loading {product_url}")
+            return result
+
+        wait = self.wait
+        base_site = self.config.DOMAIN
 
         # ========== 1. Specs ==========
         def get_box_specs():
@@ -191,7 +196,10 @@ class TGDDProductCrawler:
                     continue
 
                 try:
-                    tab_a = retry_on_stale(lambda: box_div.find_element(By.TAG_NAME, "a"))
+                    tab_a_list = retry_on_stale(lambda: box_div.find_elements(By.TAG_NAME, "a"))
+                    tab_a = tab_a_list[0] if tab_a_list else None
+                    if tab_a is None:
+                        continue
                     ul_elem = retry_on_stale(lambda: box_div.find_element(By.CSS_SELECTOR, "ul.text-specifi"))
                     if ul_elem is None:
                         continue
