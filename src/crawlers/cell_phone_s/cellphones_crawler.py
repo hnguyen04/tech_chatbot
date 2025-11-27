@@ -30,7 +30,7 @@ class CellphonesSCrawler:
 
     def run(self, skip_images: bool = True):
         print("🟢 Starting CellphonesS crawler (NO LOCAL SAVE)")
-        print(f"📦 S3 folder: cellphones/{self.s3_folder}/")
+        print(f"📦 S3 folder: output/{self.s3_folder}/")
 
         batch_index = 1
 
