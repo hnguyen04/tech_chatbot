@@ -15,10 +15,10 @@ def normalize_url(url: str) -> str | None:
 
 
 def clean_price(price: str | None) -> str | None:
-    """Remove currency suffix and keep digits/dots."""
+    """Remove currency text/symbols and keep digits only."""
     if not price:
         return None
-    digits = re.findall(r"[\d\.]+", price)
+    digits = re.findall(r"\d+", price)
     if not digits:
         return None
     return "".join(digits)

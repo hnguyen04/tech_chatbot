@@ -1,10 +1,11 @@
 """
 LLM helpers using Gemini (set GEMINI_API_KEY in .env).
-- TitleLLMEnricher: brand/model/product_line/full_title_eng/category_eng
+- TitleLLMEnricher: brand/model/product_line/full_title_eng/category_eng (batch với throttling)
 - SpecsLLMEnricher: normalize specs dict -> list[SpecItem]
 """
 import json
 import os
+import time
 from typing import List
 
 import google.generativeai as genai
@@ -15,17 +16,26 @@ from preprocess.models import CleanRecord, TitleLLMResult, SpecItem
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 _env_model = os.getenv("GEMINI_MODEL")
-# Normalize model names; v1beta expects base ids like "gemini-1.5-flash" or "gemini-1.5-pro"
+
+
 def normalize_model(name: str | None) -> str:
     if not name:
         return "gemini-1.5-flash"
     return name.replace("-latest", "")
 
+
 GEMINI_MODEL = normalize_model(_env_model)
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 else:
-    print("⚠️ GEMINI_API_KEY missing - LLM calls will fail.")
+    print(" GEMINI_API_KEY missing - LLM calls will fail.")
+
+# LLM batch/throttle configs
+TITLE_BATCH_SIZE = int(os.getenv("TITLE_LLM_BATCH", "10"))
+TITLE_RETRIES = int(os.getenv("TITLE_LLM_RETRIES", "2"))
+TITLE_SLEEP = float(os.getenv("TITLE_LLM_SLEEP", "1.0"))  # seconds between calls
+SPECS_RETRIES = int(os.getenv("SPECS_LLM_RETRIES", "2"))
+SPECS_SLEEP = float(os.getenv("SPECS_LLM_SLEEP", "1.0"))
 
 
 class TitleLLMEnricher:
@@ -36,41 +46,65 @@ class TitleLLMEnricher:
         results: List[TitleLLMResult] = []
         model = genai.GenerativeModel(self.model)
 
-        for rec in records:
-            if not rec.title:
-                results.append(TitleLLMResult(llm_processed=False))
-                continue
-
+        for i in range(0, len(records), TITLE_BATCH_SIZE):
+            chunk = records[i : i + TITLE_BATCH_SIZE]
+            user_lines = []
+            for idx, rec in enumerate(chunk):
+                user_lines.append(f"{idx+1}. Title: {rec.title}\nCategory: {rec.category}")
             prompt = (
                 "Bạn là chuyên gia trích xuất thông tin sản phẩm.\n"
-                "Phân tích title và category, trả JSON với các trường: "
+                "Nhận danh sách (title, category) và trả JSON array (theo đúng thứ tự input), mỗi item gồm: "
                 "brand (viết hoa chữ cái đầu), model, product_line, full_title_eng, category_eng. "
                 "Giữ nguyên số/ký tự đặc biệt trong model.\n"
-                f"Title: {rec.title}\nCategory: {rec.category}\n"
-                'Trả về JSON object, ví dụ: {"brand": "...", "model": "...", "product_line": "...", "full_title_eng": "...", "category_eng": "..."}'
+                "Input:\n" + "\n".join(user_lines)
+                + '\nOutput: JSON array, ví dụ: [{"brand": "...", "model": "...", "product_line": "...", "full_title_eng": "...", "category_eng": "..."}]'
             )
 
+            parsed_items = self._call_with_retry(model, prompt, expected=len(chunk))
+            # map parsed items to chunk (fallback TitleLLMResult if missing)
+            for rec, item in zip(chunk, parsed_items):
+                if not item:
+                    results.append(TitleLLMResult(llm_processed=False))
+                    continue
+                results.append(
+                    TitleLLMResult(
+                        brand=item.get("brand"),
+                        model=item.get("model"),
+                        product_line=item.get("product_line"),
+                        full_title_eng=item.get("full_title_eng"),
+                        category_eng=item.get("category_eng"),
+                        llm_processed=True,
+                    )
+                )
+
+            # throttle
+            if TITLE_SLEEP:
+                time.sleep(TITLE_SLEEP)
+
+        return results
+
+    def _call_with_retry(self, model, prompt: str, expected: int) -> List[dict]:
+        last_err = None
+        for attempt in range(TITLE_RETRIES + 1):
             try:
                 resp = model.generate_content(
                     prompt,
                     generation_config={"response_mime_type": "application/json"},
                 )
-                data = json.loads(resp.text or "{}")
-                results.append(
-                    TitleLLMResult(
-                        brand=data.get("brand"),
-                        model=data.get("model"),
-                        product_line=data.get("product_line"),
-                        full_title_eng=data.get("full_title_eng"),
-                        category_eng=data.get("category_eng"),
-                        llm_processed=True,
-                    )
-                )
+                data = json.loads(resp.text or "[]")
+                items = data if isinstance(data, list) else data.get("items") or data.get("results") or []
+                # pad/truncate to expected length
+                if not isinstance(items, list):
+                    items = []
+                while len(items) < expected:
+                    items.append({})
+                return items[:expected]
             except Exception as e:
-                print(f"LLM title enrich failed for '{rec.title[:40]}': {e}")
-                results.append(TitleLLMResult(llm_processed=False))
-
-        return results
+                last_err = e
+                print(f"LLM title batch failed (attempt {attempt+1}/{TITLE_RETRIES+1}): {e}")
+                time.sleep((attempt + 1) * TITLE_SLEEP)
+        # fallback: empty dicts
+        return [{} for _ in range(expected)]
 
 
 class SpecsLLMEnricher:
@@ -99,32 +133,41 @@ class SpecsLLMEnricher:
             "Chỉ trả JSON array."
         )
 
-        try:
-            resp = model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json"},
-            )
-            data = json.loads(resp.text or "[]")
-            items = data if isinstance(data, list) else data.get("items") or data.get("specs") or []
-
-            parsed: List[SpecItem] = []
-            for item in items:
-                try:
-                    parsed.append(
-                        SpecItem(
-                            standardized_key=item.get("standardized_key", ""),
-                            standardized_key_eng=item.get("standardized_key_eng", item.get("standardized_key_en", "")),
-                            standardized_value=item.get("standardized_value", ""),
-                            standardized_value_eng=item.get("standardized_value_eng", item.get("standardized_value_en", "")),
-                            category=item.get("category", ""),
-                            category_eng=item.get("category_eng", item.get("category_en", "")),
-                            numerical_value_list=item.get("numerical_value_list", []) or [],
-                            unit_list=item.get("unit_list", []) or [],
-                        )
+        items = self._call_with_retry(model, prompt)
+        parsed: List[SpecItem] = []
+        for item in items:
+            try:
+                parsed.append(
+                    SpecItem(
+                        standardized_key=item.get("standardized_key", ""),
+                        standardized_key_eng=item.get("standardized_key_eng", item.get("standardized_key_en", "")),
+                        standardized_value=item.get("standardized_value", ""),
+                        standardized_value_eng=item.get("standardized_value_eng", item.get("standardized_value_en", "")),
+                        category=item.get("category", ""),
+                        category_eng=item.get("category_eng", item.get("category_en", "")),
+                        numerical_value_list=item.get("numerical_value_list", []) or [],
+                        unit_list=item.get("unit_list", []) or [],
                     )
-                except Exception:
-                    continue
-            return parsed
-        except Exception as e:
-            print(f"LLM specs enrich failed: {e}")
-            return []
+                )
+            except Exception:
+                continue
+        return parsed
+
+    def _call_with_retry(self, model, prompt: str) -> List[dict]:
+        last_err = None
+        for attempt in range(SPECS_RETRIES + 1):
+            try:
+                resp = model.generate_content(
+                    prompt,
+                    generation_config={"response_mime_type": "application/json"},
+                )
+                data = json.loads(resp.text or "[]")
+                items = data if isinstance(data, list) else data.get("items") or data.get("specs") or []
+                if not isinstance(items, list):
+                    items = []
+                return items
+            except Exception as e:
+                last_err = e
+                print(f"LLM specs enrich failed (attempt {attempt+1}/{SPECS_RETRIES+1}): {e}")
+                time.sleep((attempt + 1) * SPECS_SLEEP)
+        return []

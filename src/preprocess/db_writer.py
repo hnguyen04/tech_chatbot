@@ -3,6 +3,15 @@ from psycopg2.extras import execute_values, Json
 from preprocess.models import CleanRecord, TitleLLMResult, SpecItem
 from storage.postgres_client import PostgresClient
 
+MAX_STR_200 = 200
+MAX_STR_50 = 50
+
+
+def _truncate(val: str | None, limit: int) -> str | None:
+    if val is None:
+        return None
+    return val[:limit]
+
 
 class PostgresWriter:
     def __init__(self, client: PostgresClient | None = None):
@@ -55,12 +64,12 @@ class PostgresWriter:
             rows.append(
                 (
                     product_id,
-                    item.standardized_key,
-                    item.standardized_key_eng,
-                    item.standardized_value,
-                    item.standardized_value_eng,
-                    item.category,
-                    item.category_eng,
+                    _truncate(item.standardized_key, MAX_STR_200),
+                    _truncate(item.standardized_key_eng, MAX_STR_200),
+                    _truncate(item.standardized_value, MAX_STR_200),
+                    _truncate(item.standardized_value_eng, MAX_STR_200),
+                    _truncate(item.category, MAX_STR_50),
+                    _truncate(item.category_eng, MAX_STR_50),
                     item.numerical_value_list,
                     item.unit_list,
                 )
@@ -75,5 +84,19 @@ class PostgresWriter:
          standardized_value_eng, category, category_eng, numerical_value_list, unit_list)
         VALUES %s;
         """
+        rows = [
+            (
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                r[4],
+                r[5],
+                r[6],
+                Json(r[7] or []),
+                Json(r[8] or []),
+            )
+            for r in rows
+        ]
         execute_values(self.client.cur, sql, rows)
         self.client.conn.commit()

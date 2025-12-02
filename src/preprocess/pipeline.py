@@ -43,7 +43,7 @@ class PreprocessPipeline:
         product_ids = self.db_writer.insert_products(cleaned, title_results)
 
         for pid, rec in zip(product_ids, cleaned):
-            if rec.content_type != "product":
+            if rec.content_type != "product" and not rec.product_blob:
                 continue
             specs = self.specs_enricher.run(rec)
             self.db_writer.insert_specs(pid, specs)
@@ -73,9 +73,12 @@ class PreprocessPipeline:
             return None
 
         crawl_dt = self._resolve_datetime(rec)
+        content_type = rec.content_type
+        if rec.product_blob and content_type == "article":
+            content_type = "product"
 
         title = rec.title
-        if rec.content_type == "product":
+        if content_type == "product":
             title = f"San Pham: {title}"
 
         return CleanRecord(
@@ -87,7 +90,7 @@ class PreprocessPipeline:
             price=clean_price(rec.price),
             content_text=clean_text(rec.content_text),
             images=rec.images or [],
-            content_type=rec.content_type,
+            content_type=content_type,
             product_blob=rec.product_blob,
         )
 
