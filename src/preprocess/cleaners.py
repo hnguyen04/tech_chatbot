@@ -1,6 +1,9 @@
 import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, urlunparse
+import unicodedata
+from typing import Set
+
 
 
 def normalize_url(url: str) -> str | None:
@@ -54,3 +57,55 @@ def parse_relative_time(value: str | None, now: datetime | None = None) -> datet
             delta_kwargs = {unit: amount}
             return now - timedelta(**delta_kwargs)
     return None
+
+def extract_raw_units(value: str) -> Set[str]:
+    """
+    Trích raw unit hoàn toàn data-driven
+    - KHÔNG dùng predefined unit list
+    - Unit = phần còn lại sau khi loại số
+    - Giữ nguyên chữ hoa / ký hiệu
+    """
+
+    NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[\.,]\d+)*")
+
+    if not value or not isinstance(value, str):
+        return set()
+
+    units = set()
+
+    # Tách theo khoảng trắng và các dấu phân cách thường gặp
+    tokens = re.split(r"[\s~–\-]+", value)
+
+    for token in tokens:
+        if not NUMBER_PATTERN.search(token):
+            continue
+
+        # Bỏ phần số
+        unit = NUMBER_PATTERN.sub("", token)
+
+        # Bỏ ký tự bao ngoài
+        unit = unit.strip("()[]{}×x*/≤>=:")
+
+        if not unit:
+            continue
+
+        # Bỏ token toàn dấu vô nghĩa
+        if all(c in ".,%" for c in unit):
+            continue
+
+        units.add(unit)
+
+    return units
+
+def normalize_text(text: str) -> str:
+    """
+    Normalize nhẹ:
+    - Cắt mọi thứ sau dấu :
+    - Strip space
+    - Giữ nguyên chữ hoa, dấu
+    """
+    if not text:
+        return ""
+
+    return text.split(":", 1)[0].strip()
+

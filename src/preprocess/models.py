@@ -52,3 +52,22 @@ class SpecItem:
     category_eng: str
     numerical_value_list: List[float] = field(default_factory=list)
     unit_list: List[str] = field(default_factory=list)
+
+@dataclass
+class SpecKeyEntry:
+    raw_key: str
+    normalized_key: str
+    standardized_key_eng: str
+    category_vi: str
+    category_eng: str
+
+@dataclass
+class SpecItem:
+    standardized_key: str
+    standardized_key_eng: str
+    standardized_value: str
+    standardized_value_eng: str
+    category: str
+    category_eng: str
+    numerical_value_list: List[float]
+    unit_list: List[str]
