@@ -141,14 +141,20 @@ class PreprocessPipeline:
 
     def _filter_existing(self, records: List[CleanRecord]) -> List[CleanRecord]:
         urls = [r.source_url for r in records]
+        if not urls:
+            return records
+
         placeholders = ",".join(["%s"] * len(urls))
         sql = f"SELECT source_url FROM products WHERE source_url IN ({placeholders})"
 
         try:
-            self.db_writer.client.cur.execute(sql, urls)
-            existing = {row[0] for row in self.db_writer.client.cur.fetchall()}
-        except Exception:
-            existing = set()
+            with self.db_writer.client.conn.cursor() as cur:
+                cur.execute(sql, urls)
+                existing = {row[0] for row in cur.fetchall()}
+        except Exception as e:
+            self.db_writer.client.conn.rollback()
+            print("⚠️ filter_existing failed, fallback to insert-all:", e)
+            return records   # fallback: insert hết, để DB xử lý
 
         return [r for r in records if r.source_url not in existing]
     

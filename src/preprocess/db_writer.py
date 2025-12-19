@@ -55,12 +55,18 @@ class PostgresWriter:
         full_title_eng, category, category_eng, price, content_text, images,
         llm_processed, chunked)
         VALUES %s
+        ON CONFLICT (source_url) DO NOTHING
         RETURNING id;
         """
-        execute_values(self.client.cur, sql, rows)
-        ids = [row[0] for row in self.client.cur.fetchall()]
-        self.client.conn.commit()
-        return ids
+
+        try:
+            execute_values(self.client.cur, sql, rows)
+            ids = [row[0] for row in self.client.cur.fetchall()]
+            self.client.conn.commit()
+            return ids
+        except Exception as e:
+            self.client.conn.rollback()
+            raise
 
     def insert_specs(self, product_id: int, specs: Iterable[SpecItem]):
         rows: List[Tuple] = []
