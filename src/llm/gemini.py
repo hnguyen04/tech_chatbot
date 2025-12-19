@@ -1,7 +1,7 @@
 # llm/gemini.py
 import json
 import google.generativeai as genai
-from preprocess.llm.base import LLMClient
+from llm.base import LLMClient
 
 
 class GeminiClient(LLMClient):

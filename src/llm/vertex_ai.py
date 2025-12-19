@@ -3,7 +3,7 @@ import json
 from google.oauth2 import service_account
 from vertexai import init
 from vertexai.preview.generative_models import GenerativeModel
-from preprocess.llm.base import LLMClient
+from llm.base import LLMClient
 
 
 class VertexAIClient(LLMClient):

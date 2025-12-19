@@ -7,7 +7,7 @@ import json
 import os
 import time
 from typing import List, Dict
-from preprocess.llm.factory import build_llm
+from llm.factory import build_llm
 
 import google.generativeai as genai
 from dotenv import load_dotenv

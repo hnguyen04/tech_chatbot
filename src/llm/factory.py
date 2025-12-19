@@ -3,9 +3,9 @@ import os
 import time
 import random
 from dotenv import load_dotenv
-from preprocess.llm.gemini import GeminiClient
-from preprocess.llm.openai import OpenAIClient
-from preprocess.llm.vertex_ai import VertexAIClient
+from llm.gemini import GeminiClient
+from llm.openai import OpenAIClient
+from llm.vertex_ai import VertexAIClient
 
 
 def build_llm():

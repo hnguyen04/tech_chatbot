@@ -1,6 +1,6 @@
 import json
 from openai import OpenAI
-from preprocess.llm.base import LLMClient
+from llm.base import LLMClient
 
 
 class OpenAIClient(LLMClient):
