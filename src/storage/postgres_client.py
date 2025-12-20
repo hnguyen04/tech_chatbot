@@ -1,5 +1,5 @@
 import psycopg2
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values, RealDictCursor
 import os
 from dotenv import load_dotenv
 
@@ -13,7 +13,8 @@ class PostgresClient:
         self.password = os.getenv("POSTGRES_DB_PASSWORD")
         try:
             self.conn = psycopg2.connect(
-                host=self.host, port=self.port, dbname=self.dbname, user=self.user, password=self.password
+                host=self.host, port=self.port, dbname=self.dbname, user=self.user, password=self.password,
+                cursor_factory=RealDictCursor, 
             )
             self.cur = self.conn.cursor()
             print(f"✅ Connected successfully to Postgres at {self.host}:{self.port}/{self.dbname}")

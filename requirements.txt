@@ -24,3 +24,4 @@ openai>=1.51.0
 google-generativeai>=0.7.2
 google-cloud-aiplatform==1.132.0
 ijson==3.4.0
+sentence_transformers==5.2.0

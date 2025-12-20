@@ -7,16 +7,14 @@ from storage.postgres_client import PostgresClient
 class PostgresLoader:
     def __init__(self, client: PostgresClient | None = None):
         self.client = client or PostgresClient()
-        self._spec_key_registry = None
-        self._unit_registry = None    
-    
-    def load_products_batch(
+
+    def load_records_batch(
         self,
         batch_size: int = 100,
-        offset: int = 0,
-    ) -> List[dict]:
+        last_id: int = 0,
+    ) -> list[dict]:
         """
-        Load products đã llm_processed theo batch
+        Load đúng batch_size records tiếp theo theo id
         """
         sql = """
             SELECT
@@ -31,17 +29,21 @@ class PostgresLoader:
                 category_eng,
                 content_text
             FROM products
-            WHERE llm_processed = TRUE
+            WHERE
+                llm_processed = TRUE
+                AND id > %(last_id)s
             ORDER BY id
-            LIMIT %(limit)s OFFSET %(offset)s
+            LIMIT %(limit)s
         """
+
         return self.client.fetch_all(
             sql,
             {
                 "limit": batch_size,
-                "offset": offset,
+                "last_id": last_id,
             },
         )
+
 
     # -------------------------
     # SPECS (1-n)
@@ -84,6 +86,21 @@ class PostgresLoader:
             grouped[row["product_id"]].append(row)
 
         return grouped
+    
+    def mark_chunked(self, record_ids: List[int]):
+        if not record_ids:
+            return
+        sql = """
+            UPDATE products
+            SET chunked = TRUE
+            WHERE id = ANY(%s)
+        """
+        try:
+            self.client.cur.execute(sql, (record_ids,))
+            self.client.conn.commit()
+        except Exception as e:
+            self.client.conn.rollback()
+            print(f"❌ Failed to mark chunked: {e}")
 
     # -------------------------
     # CLEANUP
