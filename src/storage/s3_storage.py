@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import re
 from datetime import datetime
+import ijson
 
 load_dotenv()
 
@@ -54,3 +55,37 @@ class S3Storage:
             Body=json_content.encode("utf-8"),
             ContentType="application/json"
         )
+
+    def stream_json(self, key: str):
+        """
+        ✅ CHANGED:
+        - Stream JSON array từ S3
+        - Không load toàn bộ object
+        """
+        if not self.bucket:
+            raise ValueError("S3 bucket not set")
+
+        obj = self.s3.get_object(Bucket=self.bucket, Key=key)
+        body = obj["Body"]
+
+        # item = từng phần tử trong JSON array
+        for item in ijson.items(body, "item"):
+            yield item
+
+    def list_keys(self, prefix: str) -> list[str]:
+        """
+        List toàn bộ object key dưới prefix
+        """
+        paginator = self.s3.get_paginator("list_objects_v2")
+        keys = []
+
+        for page in paginator.paginate(
+            Bucket=self.bucket,
+            Prefix=prefix
+        ):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                if not key.endswith("/"):
+                    keys.append(key)
+
+        return keys
