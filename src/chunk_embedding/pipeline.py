@@ -38,12 +38,18 @@ class EmbeddingPipeline:
             for idx, chunk_text in content_chunks:
                 # kết hợp spec_block + chunk_text
                 full_text = ""
-                if record["content_type"] == "product" and spec_block:
-                    full_text += spec_block + "\n"
                 full_text += f"Title: {record['full_title']}\n"
-                full_text += f"Category: {record['category_eng'] or record['category']}\n"
+                full_text += f"Category: {record['category'] or record['category_eng']}\n"
                 if record.get("brand"):
                     full_text += f"Brand: {record['brand']}\n"
+                if record.get("model"):
+                    full_text += f"Model: {record['model']}\n"
+                if record.get("product_line"):
+                    full_text += f"Product Line: {record['product_line']}\n"
+                if record.get("price"):
+                    full_text += f"Price: {record['price']} VNĐ\n"
+                if record["content_type"] == "product" and spec_block:
+                    full_text += spec_block + "\n"
                 full_text += "Content:\n" + chunk_text
 
                 # nếu full_text vẫn quá dài → cắt thêm
@@ -51,7 +57,7 @@ class EmbeddingPipeline:
                 for safe_idx, safe_text in safe_chunks:
                     docs.append({
                         "record_id": record["id"],
-                        "chunk_index": idx*100 + safe_idx,  # giữ thứ tự
+                        "chunk_index": idx*100 + safe_idx + 30000,  # giữ thứ tự
                         "text": safe_text,
                     })
                     texts_to_embed.append(safe_text)

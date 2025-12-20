@@ -24,13 +24,14 @@ class PostgresLoader:
                 brand,
                 model,
                 product_line,
+                price,
                 full_title,
                 category,
                 category_eng,
                 content_text
             FROM products
             WHERE
-                llm_processed = TRUE
+                llm_processed = TRUE and chunked = FALSE
                 AND id > %(last_id)s
             ORDER BY id
             LIMIT %(limit)s
