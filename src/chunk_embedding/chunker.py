@@ -7,7 +7,7 @@ import re
 class Chunker:
     def __init__(
         self,
-        max_chars: int = 500,
+        max_chars: int = 4096,
         overlap_units: int = 1,
     ):
         self.max_chars = max_chars
