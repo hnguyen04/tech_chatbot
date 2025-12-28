@@ -2,21 +2,12 @@ from sentence_transformers import SentenceTransformer
 from typing import List
 
 class Embedder:
-    def __init__(self, model_name: str = "dangvantuan/vietnamese-embedding"):
+    def __init__(self, model_name: str = "dangvantuan/vietnamese-document-embedding"):
         """
         Embedder offline cho tiếng Việt, không dùng LLM API.
         model_name: Hugging Face model repository
         """
-        # tải mô hình từ HF về (một lần)
-        self.model = SentenceTransformer(model_name)
-
-class Embedder:
-    def __init__(self, model_name: str = "dangvantuan/vietnamese-embedding"):
-        """
-        Embedder offline cho tiếng Việt, không dùng LLM API.
-        model_name: Hugging Face model repository
-        """
-        self.model = SentenceTransformer(model_name)
+        self.model = SentenceTransformer(model_name, trust_remote_code=True)
 
     def embed(self, texts: List[str]) -> List[List[float]]:
         if not texts:
