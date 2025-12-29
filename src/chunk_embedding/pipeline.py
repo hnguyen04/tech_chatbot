@@ -32,35 +32,44 @@ class EmbeddingPipeline:
             specs = specs_map.get(record["id"], [])
             spec_block = self.spec_builder.build(specs)
 
-            # chỉ chunk phần content_text
+            # ---------- 1. header cố định ----------
+            header = ""
+            header += f"Title: {record['full_title']}\n"
+            header += f"Category: {record['category'] or record['category_eng']}\n"
+            if record.get("brand"):
+                header += f"Brand: {record['brand']}\n"
+            if record.get("model"):
+                header += f"Model: {record['model']}\n"
+            if record.get("product_line"):
+                header += f"Product Line: {record['product_line']}\n"
+            if record.get("price"):
+                header += f"Price: {record['price']} VNĐ\n"
+
+            # ---------- 2. chunk spec_block ----------
+            if record["content_type"] == "product" and spec_block:
+                spec_chunks = [text for _, text in self.chunker.chunk(spec_block)]
+            else:
+                spec_chunks = [None]
+
+            # ---------- 3. chunk content ----------
             content_chunks = self.chunker.chunk(record.get("content_text"))
 
-            for idx, chunk_text in content_chunks:
-                # kết hợp spec_block + chunk_text
-                full_text = ""
-                full_text += f"Title: {record['full_title']}\n"
-                full_text += f"Category: {record['category'] or record['category_eng']}\n"
-                if record.get("brand"):
-                    full_text += f"Brand: {record['brand']}\n"
-                if record.get("model"):
-                    full_text += f"Model: {record['model']}\n"
-                if record.get("product_line"):
-                    full_text += f"Product Line: {record['product_line']}\n"
-                if record.get("price"):
-                    full_text += f"Price: {record['price']} VNĐ\n"
-                if record["content_type"] == "product" and spec_block:
-                    full_text += spec_block + "\n"
-                full_text += "Content:\n" + chunk_text
+            # ---------- 4. combine ----------
+            for content_idx, content_text in content_chunks:
+                for spec_idx, spec_text in enumerate(spec_chunks):
+                    full_text = header
 
-                # nếu full_text vẫn quá dài → cắt thêm
-                safe_chunks = self.chunker.chunk(full_text)
-                for safe_idx, safe_text in safe_chunks:
+                    if spec_text:
+                        full_text += spec_text + "\n"
+
+                    full_text += "Content:\n" + content_text
+
                     docs.append({
                         "record_id": record["id"],
-                        "chunk_index": idx*100 + safe_idx + 30000,  # giữ thứ tự
-                        "text": safe_text,
+                        "chunk_index": content_idx * 100 + spec_idx,
+                        "text": full_text,
                     })
-                    texts_to_embed.append(safe_text)
+                    texts_to_embed.append(full_text)
 
         return docs, texts_to_embed
 
