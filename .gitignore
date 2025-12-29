@@ -215,3 +215,14 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 keys/
+
+# Project specific
+output/
+requirements.lock
+.gemini/
+
+# Documentation
+*.md
+!README.md
+GEMINI.md
+!MILVUS_SETUP.md

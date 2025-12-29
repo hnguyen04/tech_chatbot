@@ -89,7 +89,7 @@ class EmbeddingPipeline:
             try:
                 embeddings = self._compute_embeddings(texts_to_embed)
             except Exception as e:
-                print(f"❌ Failed to compute embeddings: {e}")
+                print(f"Failed to compute embeddings: {e}")
                 embeddings = [None] * len(texts_to_embed)  # giữ số lượng, bỏ chunk fail
 
             # zip docs với embeddings, bỏ None
@@ -109,16 +109,16 @@ class EmbeddingPipeline:
                 try:
                     self.save_to_milvus(embedded_docs, collection_name)
                 except Exception as e:
-                    print(f"❌ Failed to save to Milvus: {e}")
+                    print(f"Failed to save to Milvus: {e}")
 
             return embedded_docs, new_last_id
 
         except Exception as e:
-            print(f"❌ Failed to process batch: {e}")
+            print(f"Failed to process batch: {e}")
             return [], last_id
 
     # -------------------------
-    # 5️⃣ Save vào Milvus
+    # Save to Milvus
     # -------------------------
     def save_to_milvus(self, embedded_docs: List[dict], collection_name: str):
         """
@@ -133,4 +133,4 @@ class EmbeddingPipeline:
         # Lấy record_id duy nhất để đánh dấu chunked
         record_ids = list({doc["record_id"] for doc in embedded_docs})
         self.loader.mark_chunked(record_ids)
-        print(f"✅ Marked {len(record_ids)} records as chunked in Postgres")
+        print(f"Marked {len(record_ids)} records as chunked in Postgres")
