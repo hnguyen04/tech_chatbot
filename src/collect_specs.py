@@ -88,7 +88,7 @@ def enrich_spec_keys(batch_size: int = 20):
         rows = writer.fetch_spec_keys_missing_enrichment(batch_size)
 
         if not rows:
-            print("✅ No more spec keys to enrich")
+            print("No more spec keys to enrich")
             break
 
         print(f"Enriching {len(rows)} spec keys")

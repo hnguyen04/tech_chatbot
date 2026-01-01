@@ -398,4 +398,3 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         use_json=not args.use_postgres
     )
-

@@ -14,7 +14,7 @@ QWEN_EMBEDDING_DIM = os.getenv("QWEN_EMBEDDING_DIM", None)  # Custom dimension (
 
 # Gemini API Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Milvus/Zilliz Cloud Configuration
 MILVUS_COLLECTION_NAME = os.getenv("MILVUS_COLLECTION_NAME", "tech_embeddings")

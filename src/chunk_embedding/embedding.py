@@ -1,12 +1,5 @@
 from sentence_transformers import SentenceTransformer
-from typing import List, Optional
-import torch
-from transformers import AutoTokenizer, AutoModel
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
+from typing import List
 
 class Embedder:
     def __init__(self, model_name: str = "dangvantuan/vietnamese-document-embedding"):
@@ -17,45 +10,16 @@ class Embedder:
         self.model = SentenceTransformer(model_name, trust_remote_code=True)
 
     def embed(self, texts: List[str]) -> List[List[float]]:
-        """
-        Embed texts using the appropriate method
-        
-        Args:
-            texts: List of text strings to embed
-            
-        Returns:
-            List of embedding vectors (list of floats)
-        """
         if not texts:
             return []
-        
-        if self.use_qwen:
-            return self._embed_qwen(texts)
-        elif self.use_sentence_transformer:
-            return self._embed_sentence_transformer(texts)
-        else:
-            raise RuntimeError("Embedder not properly initialized")
-    
-    def embed_query(self, text: str) -> List[float]:
-        """
-        Embed a single query text (LangChain compatibility)
-        
-        Args:
-            text: Query text
-            
-        Returns:
-            Embedding vector as list of floats
-        """
-        return self.embed([text])[0]
-    
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """
-        Embed multiple documents (LangChain compatibility)
-        
-        Args:
-            texts: List of text strings
-            
-        Returns:
-            List of embedding vectors
-        """
-        return self.embed(texts)
+
+        dim = self.model.get_sentence_embedding_dimension()
+        embeddings = []
+        for t in texts:
+            try:
+                emb = self.model.encode([t], show_progress_bar=False, convert_to_numpy=True)
+                embeddings.append(emb[0].tolist())
+            except Exception:
+                # Nếu lỗi, thêm zero vector
+                embeddings.append([0.0]*dim)
+        return embeddings

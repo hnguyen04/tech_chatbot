@@ -41,13 +41,13 @@ SPECS_SLEEP = float(os.getenv("SPECS_LLM_SLEEP", "1.0"))
 
 class TitleLLMEnricher:
     def __init__(self, model: str = GEMINI_MODEL):
-        # 🔧 FIX: build_llm trả về callable llm(prompt)
+        # FIX: build_llm trả về callable llm(prompt)
         self.llm = build_llm()
 
     def run_batch(self, records: List[CleanRecord]) -> List[TitleLLMResult]:
         results: List[TitleLLMResult] = []
 
-        # 🔧 FIX: bỏ genai.GenerativeModel (không dùng nữa)
+        # FIX: bỏ genai.GenerativeModel (không dùng nữa)
         for i in range(0, len(records), TITLE_BATCH_SIZE):
             chunk = records[i : i + TITLE_BATCH_SIZE]
             user_lines = []
@@ -69,7 +69,7 @@ class TitleLLMEnricher:
                     '"full_title_eng": "...", "category_eng": "..."}]'
             )
 
-            # 🔧 FIX: truyền self.llm thay vì model
+            # FIX: truyền self.llm thay vì model
             parsed_items = self._call_with_retry(
                 prompt,
                 expected=len(chunk),
@@ -101,10 +101,10 @@ class TitleLLMEnricher:
 
         for attempt in range(TITLE_RETRIES + 1):
             try:
-                # 🔧 FIX: gọi self.llm(prompt)
+                # FIX: gọi self.llm(prompt)
                 items = self.llm(prompt)
 
-                # 🔧 FIX: build_llm đã parse JSON → không json.loads
+                # FIX: build_llm đã parse JSON → không json.loads
                 if not isinstance(items, list):
                     items = []
 

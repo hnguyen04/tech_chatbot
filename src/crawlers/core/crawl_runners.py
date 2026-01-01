@@ -28,7 +28,7 @@ class CrawlRunner:
 
         for i, crawler in enumerate(self.crawlers, start=1):
             crawler_name = crawler.__class__.__name__
-            print(f"🚀 Running {crawler_name} ({i}/{total}) ...")
+            print(f"Running {crawler_name} ({i}/{total}) ...")
 
             crawler_start = time.time()
             crawler.run()
@@ -36,6 +36,6 @@ class CrawlRunner:
 
             elapsed = crawler_end - crawler_start
 
-            print(f"⏱ Finished {crawler_name} in {elapsed:.1f}s")
+            print(f"Finished {crawler_name} in {elapsed:.1f}s")
             print("-" * 40)
 

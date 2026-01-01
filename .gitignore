@@ -226,3 +226,6 @@ requirements.lock
 !README.md
 GEMINI.md
 !MILVUS_SETUP.md
+
+venv/
+.cursor

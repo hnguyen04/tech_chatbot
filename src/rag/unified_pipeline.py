@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 from rag.vietnamese_retriever import VietnameseRetriever
 from rag.reranker import QwenReranker
 from rag.llm_service import GeminiLLMService
-from rag.config import TOP_K_RETRIEVE, TOP_N_RERANK
+from rag.config import TOP_K_RETRIEVE, TOP_N_RERANK, MILVUS_COLLECTION_NAME
 from storage.postgres_client import PostgresClient
 
 
@@ -21,7 +21,7 @@ class UnifiedRAGPipeline:
         retriever: Optional[VietnameseRetriever] = None,
         reranker: Optional[QwenReranker] = None,
         llm_service: Optional[GeminiLLMService] = None,
-        collection_name: str = "tech_embeddings"
+        collection_name: Optional[str] = None
     ):
         """
         Initialize unified RAG pipeline
@@ -34,7 +34,8 @@ class UnifiedRAGPipeline:
         """
         print("Initializing Unified RAG Pipeline...")
         
-        self.retriever = retriever or VietnameseRetriever(collection_name=collection_name)
+        target_collection = collection_name or MILVUS_COLLECTION_NAME
+        self.retriever = retriever or VietnameseRetriever(collection_name=target_collection)
         self.reranker = reranker or QwenReranker()
         self.llm_service = llm_service or GeminiLLMService()
         self.pg_client = PostgresClient()

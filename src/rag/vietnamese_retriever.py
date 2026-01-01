@@ -6,8 +6,9 @@ import os
 from typing import List, Optional
 from dotenv import load_dotenv
 from pymilvus import Collection, connections
-from sentence_transformers import SentenceTransformer
 from langchain_core.documents import Document
+from chunk_embedding.embedding import Embedder
+from rag.config import MILVUS_COLLECTION_NAME
 
 load_dotenv()
 
@@ -20,8 +21,7 @@ class VietnameseRetriever:
     
     def __init__(
         self,
-        collection_name: str = "tech_embeddings",
-        model_name: str = "dangvantuan/vietnamese-embedding",
+        collection_name: Optional[str] = None,
         alias: str = "zilliz_query"
     ):
         """
@@ -29,23 +29,22 @@ class VietnameseRetriever:
         
         Args:
             collection_name: Name of the Milvus collection
-            model_name: SentenceTransformer model name
             alias: Milvus connection alias
         """
-        self.collection_name = collection_name
+        self.collection_name = collection_name or MILVUS_COLLECTION_NAME
         self.alias = alias
         
         # Load embedding model (same as ingestion)
-        print(f"Loading Vietnamese embedding model: {model_name}")
-        self.embedder = SentenceTransformer(model_name)
+        # We use the default Embedder() which uses the correct model for the DB
+        self.embedder = Embedder()
         
         # Connect to Milvus
         self._connect_milvus()
         
         # Load collection
-        self.collection = Collection(name=collection_name, using=self.alias)
+        self.collection = Collection(name=self.collection_name, using=self.alias)
         self.collection.load()
-        print(f"Retriever ready with collection '{collection_name}'")
+        print(f"Retriever ready with collection '{self.collection_name}'")
     
     def _connect_milvus(self):
         """Connect to Zilliz Cloud"""
@@ -78,8 +77,8 @@ class VietnameseRetriever:
         Returns:
             Embedding vector
         """
-        embedding = self.embedder.encode([query], convert_to_numpy=True, show_progress_bar=False)
-        return embedding[0].tolist()
+        # The restored Embedder only has an 'embed' method taking a list
+        return self.embedder.embed([query])[0]
     
     def retrieve(
         self,
