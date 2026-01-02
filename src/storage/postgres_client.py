@@ -49,6 +49,50 @@ class PostgresClient:
         execute_values(self.cur, sql, values)
         self.conn.commit()
 
+    def search_keyword(self, query: str, limit: int = 20) -> list[dict]:
+        """
+        Perform keyword search using PostgreSQL Full-Text Search
+        
+        Args:
+            query: Search query
+            limit: Max results
+            
+        Returns:
+            List of products with rank score
+        """
+        if not self.cur:
+            return []
+            
+        # Using websearch_to_tsquery for flexible query parsing
+        # Search in title, brand, model, and content
+        sql = """
+            SELECT id, full_title, category, brand, model, price, source_url, content_text,
+                   ts_rank(
+                       setweight(to_tsvector('simple', coalesce(full_title, '')), 'A') || 
+                       setweight(to_tsvector('simple', coalesce(brand, '')), 'B') ||
+                       setweight(to_tsvector('simple', coalesce(model, '')), 'B') ||
+                       setweight(to_tsvector('simple', coalesce(content_text, '')), 'C'),
+                       websearch_to_tsquery('simple', %s)
+                   ) as rank
+            FROM products
+            WHERE (
+                to_tsvector('simple', coalesce(full_title, '')) || 
+                to_tsvector('simple', coalesce(brand, '')) ||
+                to_tsvector('simple', coalesce(model, '')) ||
+                to_tsvector('simple', coalesce(content_text, ''))
+            ) @@ websearch_to_tsquery('simple', %s)
+            ORDER BY rank DESC
+            LIMIT %s
+        """
+        
+        try:
+            self.cur.execute(sql, (query, query, limit))
+            results = self.cur.fetchall()
+            return results
+        except Exception as e:
+            print(f"Error in keyword search: {e}")
+            return []
+
     def close(self):
         if self.cur:
             self.cur.close()

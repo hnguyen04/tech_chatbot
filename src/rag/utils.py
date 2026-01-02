@@ -113,3 +113,23 @@ def format_document_metadata(doc_id: int, source_url: str, title: str, category:
         "chunk_index": chunk_index
     }
 
+
+def reciprocal_rank_fusion(ranked_id_lists: List[List[any]], k: int = 60) -> dict:
+    """
+    Compute RRF scores for fusion of multiple ranked lists
+    
+    Args:
+        ranked_id_lists: List of lists, where each list contains IDs in ranked order
+        k: RRF constant (default 60)
+        
+    Returns:
+        Dictionary mapping ID to combined score
+    """
+    scores = {}
+    for rank_list in ranked_id_lists:
+        for rank, item_id in enumerate(rank_list):
+            if item_id not in scores:
+                scores[item_id] = 0.0
+            scores[item_id] += 1.0 / (k + rank + 1)
+    return scores
+

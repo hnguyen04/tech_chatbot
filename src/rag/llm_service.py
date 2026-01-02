@@ -4,12 +4,14 @@ LLM service using Google Gemini API for RAG and LLM-as-a-judge
 import json
 import os
 import time
+from datetime import datetime
 from typing import List, Dict, Optional
 import google.generativeai as genai
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from rag.config import GEMINI_API_KEY, GEMINI_MODEL
+from rag.prompts import QUERY_DECOMPOSITION_PROMPT, HYDE_PROMPT, RAG_SYSTEM_PROMPT
 
 load_dotenv()
 
@@ -42,23 +44,78 @@ class GeminiLLMService:
         )
         self.raw_model = genai.GenerativeModel(model_name)
     
-    def generate_response(self, prompt: str, context: Optional[str] = None, 
-                         conversation_history: Optional[List[Dict[str, str]]] = None) -> str:
+    def generate_search_queries(self, query: str) -> List[str]:
         """
-        Generate response using Gemini
+        Decompose a complex query into simple search queries
+        
+        Args:
+            query: User's original query
+            
+        Returns:
+            List of simplified search queries
+        """
+        try:
+            prompt = QUERY_DECOMPOSITION_PROMPT.format(query=query)
+            response = self.raw_model.generate_content(
+                prompt,
+                generation_config={"response_mime_type": "application/json"}
+            )
+            result = json.loads(response.text)
+            queries = result.get("queries", [])
+            
+            # Ensure the original query is included if the list is empty or doesn't have it
+            if not queries:
+                queries = [query]
+            elif query not in queries:
+                queries.append(query)
+                
+            return queries
+        except Exception as e:
+            print(f"Error generating search queries: {e}")
+            return [query]
+
+    def generate_hypothetical_answer(self, query: str) -> str:
+        """
+        Generate a hypothetical answer (HyDE) for the query
+        
+        Args:
+            query: User's query
+            
+        Returns:
+            Hypothetical answer text
+        """
+        try:
+            prompt = HYDE_PROMPT.format(query=query)
+            response = self.raw_model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            print(f"Error generating HyDE answer: {e}")
+            return ""
+
+    def generate_response(self, prompt: str, context: Optional[str] = None, 
+                         conversation_history: Optional[List[Dict[str, str]]] = None,
+                         current_date: Optional[str] = None) -> str:
+        """
+        Generate response using Gemini with Chain-of-Thought reasoning
         
         Args:
             prompt: User prompt/question
             context: Retrieved context documents
             conversation_history: Previous conversation messages
+            current_date: Current date string (YYYY-MM-DD)
             
         Returns:
             Generated response text
         """
+        # Default current date if not provided
+        if not current_date:
+            current_date = datetime.now().strftime("%Y-%m-%d")
+
         # Build system message with context
-        system_content = """You are a helpful assistant that answers questions about technology products and articles.
-Answer based on the provided context. If the context doesn't contain enough information, say so.
-Always cite sources when possible."""
+        if context:
+            system_content = RAG_SYSTEM_PROMPT.format(context=context, current_date=current_date)
+        else:
+            system_content = f"You are a helpful assistant. Current Date: {current_date}. Please answer the user's question."
         
         messages = [SystemMessage(content=system_content)]
         
@@ -70,12 +127,8 @@ Always cite sources when possible."""
                 elif msg.get("role") == "assistant":
                     messages.append(AIMessage(content=msg.get("content", "")))
         
-        # Add context if provided
-        if context:
-            context_prompt = f"Context:\n{context}\n\nQuestion: {prompt}\n\nAnswer:"
-            messages.append(HumanMessage(content=context_prompt))
-        else:
-            messages.append(HumanMessage(content=prompt))
+        # Add current user prompt
+        messages.append(HumanMessage(content=prompt))
         
         try:
             response = self.llm.invoke(messages)
