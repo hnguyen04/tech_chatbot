@@ -16,6 +16,10 @@ QWEN_EMBEDDING_DIM = os.getenv("QWEN_EMBEDDING_DIM", None)  # Custom dimension (
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
+# OpenAI API Configuration (Used for ground truth generation)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+
 # Milvus/Zilliz Cloud Configuration
 MILVUS_COLLECTION_NAME = os.getenv("MILVUS_COLLECTION_NAME", "tech_embeddings")
 MILVUS_EMBEDDING_DIM = int(os.getenv("MILVUS_EMBEDDING_DIM", "1024"))  # Default 1024 for Qwen3-Embedding-0.6B, will be auto-detected

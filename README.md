@@ -79,10 +79,6 @@ DEVICE=cpu  # or "cuda"
 ```bash
 # Run automated setup and verification
 python setup_milvus.py
-
-# Or manually test
-cd src
-python -m rag.test_embeddings
 ```
 
 ### 5. Ingest Data
@@ -107,9 +103,6 @@ cd src
 
 # Streamlit web interface
 streamlit run rag/streamlit_app.py
-
-# Or test the pipeline
-python -m rag.test_pipeline
 ```
 
 ## Project Structure
@@ -117,25 +110,62 @@ python -m rag.test_pipeline
 ```
 tech_chatbot/
 ├── src/
-│   ├── crawlers/          # Web scraping modules
-│   ├── storage/           
-│   │   ├── milvus_client.py    # Milvus/Zilliz retriever
-│   │   └── postgres_client.py  # PostgreSQL client
-│   ├── rag/
-│   │   ├── config.py               # Configuration
-│   │   ├── vietnamese_retriever.py # Vietnamese embedding retriever
-│   │   ├── unified_pipeline.py     # Integrated RAG pipeline
-│   │   ├── reranker.py             # Qwen reranker
-│   │   ├── llm_service.py          # Gemini LLM
-│   │   ├── evaluation.py           # Evaluation system
-│   │   ├── test_pipeline.py        # Testing
-│   │   └── streamlit_app.py        # Web interface
-│   └── preprocess/        # Data preprocessing
-├── output/                # JSON data files
-├── requirements.txt       # Python dependencies
-├── setup_milvus.py       # Setup automation script
-├── MILVUS_SETUP.md       # Detailed Milvus guide
-└── README.md             # This file
+│   ├── chunk_embedding/      # Embedding pipeline modules
+│   │   ├── builder.py         # Document and spec block builders
+│   │   ├── chunker.py         # Text chunking logic
+│   │   ├── db_loader.py       # PostgreSQL data loader
+│   │   ├── embedding.py       # Embedding generation
+│   │   ├── pipeline.py        # End-to-end embedding pipeline
+│   │   └── vector_db_writer.py # Milvus writer
+│   ├── crawlers/              # Web scraping modules
+│   │   ├── cell_phone_s/      # Cellphones.com crawler
+│   │   ├── thegioididong/     # Thegioididong.com crawler
+│   │   └── core/              # Core crawling infrastructure
+│   ├── eval/                  # Evaluation and testing tools
+│   │   ├── evaluation.py      # Automated batch evaluation
+│   │   ├── generate_ground_truth.py  # Golden dataset generation
+│   │   ├── run_retrieval_benchmark.py # Retrieval benchmarking
+│   │   └── test_chatbot_vietnamese.py # Interactive CLI testing
+│   ├── llm/                   # LLM service abstractions
+│   │   ├── base.py            # Base LLM interface
+│   │   ├── factory.py         # LLM factory
+│   │   ├── gemini.py          # Google Gemini implementation
+│   │   ├── openai.py          # OpenAI implementation
+│   │   └── vertex_ai.py       # Vertex AI implementation
+│   ├── preprocess/            # Data preprocessing
+│   │   ├── cleaners.py        # Text cleaning utilities
+│   │   ├── db_writer.py       # Database writing
+│   │   ├── models.py          # Data models
+│   │   └── pipeline.py        # Preprocessing pipeline
+│   ├── rag/                   # RAG pipeline components
+│   │   ├── config.py          # Configuration
+│   │   ├── vietnamese_retriever.py  # Vietnamese embedding retriever
+│   │   ├── unified_pipeline.py      # Integrated RAG pipeline
+│   │   ├── reranker.py              # Qwen reranker
+│   │   ├── llm_service.py           # LLM service wrapper
+│   │   ├── streamlit_app.py         # Web interface
+│   │   └── data_ingestion.py        # Data ingestion scripts
+│   ├── storage/               # Storage clients
+│   │   ├── milvus_client.py   # Milvus/Zilliz client
+│   │   ├── postgres_client.py # PostgreSQL client
+│   │   └── s3_storage.py      # S3 storage client
+│   ├── run_embeddings.py      # Run embedding pipeline
+│   ├── run_preprocess.py      # Run preprocessing
+│   └── run_rag_chatbot.py     # Run RAG chatbot
+├── docs/                      # Documentation
+│   ├── PLAN.md                # Project plan
+│   ├── PLAN_DATASETS.md       # Dataset planning
+│   └── PLAN_EVAL.md           # Evaluation planning
+├── output/                    # Generated data files
+│   ├── tgdd_articles.json     # Scraped articles
+│   ├── tgdd_products.json     # Scraped products
+│   └── manual_evaluation_prompts/  # Evaluation prompts
+├── entities.json              # Entity definitions
+├── EVALUATION_DATASET.json    # Evaluation dataset
+├── GOLDEN_DATASET.json        # Golden dataset for evaluation
+├── requirements.txt           # Python dependencies
+├── setup_milvus.py            # Setup automation script
+└── README.md                  # This file
 ```
 
 ## Components
@@ -302,8 +332,8 @@ retriever.delete_collection()
 
 **Solution**: 
 ```bash
-cd src
-python -m rag.test_embeddings  # Check actual dimension
+# Run setup script to check dimensions
+python setup_milvus.py
 # Update MILVUS_EMBEDDING_DIM in .env
 ```
 
@@ -332,15 +362,6 @@ python -m rag.test_embeddings  # Check actual dimension
 
 ### Benchmarks
 
-Tested on: CPU (Intel i7), Vietnamese product data
-
-| Operation | Performance |
-|-----------|------------|
-| Initial indexing (1K products) | ~2-3 min |
-| Query with Vietnamese embedding | ~100-150ms |
-| Batch insert (100 products) | ~10-15s |
-| Metadata filtering | ✅ Supported |
-| Scalability | Billions of vectors |
 
 ### Optimization Tips
 
@@ -351,22 +372,6 @@ Tested on: CPU (Intel i7), Vietnamese product data
 5. **Caching**: Cache frequently used embeddings
 
 ## Development
-
-### Testing
-
-```bash
-# Test embeddings
-cd src
-python -m rag.test_embeddings
-
-# Test RAG pipeline
-cd src
-python -m rag.test_pipeline
-
-# Test Milvus connection
-cd src
-python -c "from storage.milvus_client import MilvusRetriever; r = MilvusRetriever(); print(r.get_collection_stats())"
-```
 
 ### Adding New Data Sources
 
@@ -390,8 +395,4 @@ python -c "from storage.milvus_client import MilvusRetriever; r = MilvusRetrieve
 ## Support
 
 For issues and questions:
-- Technical docs: See `MILVUS_SETUP.md`
 - Setup help: Run `python setup_milvus.py`
-- Milvus/Zilliz: [Community Forum](https://discuss.milvus.io/)
-
-
