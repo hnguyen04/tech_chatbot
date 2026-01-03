@@ -1,8 +1,7 @@
 """
-Data ingestion script: Load from PostgreSQL or JSON, chunk, embed, and store in Milvus
+Data ingestion script: Load from PostgreSQL, chunk, embed, and store in Milvus
 """
 import os
-import json
 from typing import List
 from langchain_core.documents import Document
 from storage.postgres_client import PostgresClient
@@ -11,7 +10,6 @@ from chunk_embedding.embedding import Embedder
 from rag.utils import chunk_text, format_document_metadata
 from rag.config import (
     CHUNK_SIZE, CHUNK_OVERLAP,
-    JSON_DATA_PATH, JSON_ARTICLES_FILE, JSON_PRODUCTS_FILE,
     MILVUS_COLLECTION_NAME, MILVUS_EMBEDDING_DIM,
     QWEN_EMBEDDING_MODEL, DEVICE, QWEN_EMBEDDING_INSTRUCTION, QWEN_EMBEDDING_DIM
 )
@@ -163,149 +161,40 @@ def update_chunked_flag(product_ids: List[int]):
         pg_client.close()
 
 
-def load_data_from_json(data_path: str = None, articles_file: str = None, products_file: str = None) -> List[dict]:
-    """
-    Load data from JSON files (articles and products)
-    
-    Args:
-        data_path: Path to directory containing JSON files (default: JSON_DATA_PATH)
-        articles_file: Name of articles JSON file (default: JSON_ARTICLES_FILE)
-        products_file: Name of products JSON file (default: JSON_PRODUCTS_FILE)
-        
-    Returns:
-        List of document dictionaries
-    """
-    data_path = data_path or JSON_DATA_PATH
-    articles_file = articles_file or JSON_ARTICLES_FILE
-    products_file = products_file or JSON_PRODUCTS_FILE
-    
-    # Resolve paths relative to tech_chatbot directory
-    if not os.path.isabs(data_path):
-        # Assume relative to tech_chatbot directory
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        data_path = os.path.join(base_dir, data_path)
-    
-    articles_path = os.path.join(data_path, articles_file)
-    products_path = os.path.join(data_path, products_file)
-    
-    documents = []
-    
-    # Load articles
-    if os.path.exists(articles_path):
-        try:
-            with open(articles_path, 'r', encoding='utf-8') as f:
-                articles = json.load(f)
-                print(f"Loaded {len(articles)} articles from {articles_path}")
-                
-                for article in articles:
-                    content_text = article.get("content", {}).get("text", "")
-                    if not content_text:
-                        continue
-                    
-                    doc = {
-                        "id": article.get("id", ""),
-                        "source_url": article.get("source", {}).get("url", ""),
-                        "domain": article.get("source", {}).get("domain", ""),
-                        "title": article.get("metadata", {}).get("title", ""),
-                        "category": article.get("metadata", {}).get("category", ""),
-                        "content_type": article.get("metadata", {}).get("content_type", "article"),
-                        "content_text": content_text,
-                        "images": article.get("content", {}).get("images", []),
-                        "chunked": False  # JSON data is not pre-chunked
-                    }
-                    documents.append(doc)
-        except Exception as e:
-            print(f"Error loading articles from {articles_path}: {e}")
-    else:
-        print(f"Warning: Articles file not found: {articles_path}")
-    
-    # Load products
-    if os.path.exists(products_path):
-        try:
-            with open(products_path, 'r', encoding='utf-8') as f:
-                products = json.load(f)
-                print(f"Loaded {len(products)} products from {products_path}")
-                
-                for product in products:
-                    # Combine product info into text
-                    content_text = product.get("content", {}).get("text", "")
-                    product_info = product.get("content", {}).get("product", {})
-                    
-                    # Format product info as text
-                    if product_info:
-                        product_text = "\n".join([f"{k} {v}" for k, v in product_info.items()])
-                        if content_text:
-                            content_text = f"{content_text}\n\n{product_text}"
-                        else:
-                            content_text = product_text
-                    
-                    if not content_text:
-                        continue
-                    
-                    doc = {
-                        "id": product.get("id", ""),
-                        "source_url": product.get("source", {}).get("url", ""),
-                        "domain": product.get("source", {}).get("domain", ""),
-                        "title": product.get("metadata", {}).get("title", ""),
-                        "category": product.get("metadata", {}).get("category", ""),
-                        "content_type": product.get("metadata", {}).get("content_type", "product"),
-                        "content_text": content_text,
-                        "images": product.get("content", {}).get("images", []),
-                        "chunked": False  # JSON data is not pre-chunked
-                    }
-                    documents.append(doc)
-        except Exception as e:
-            print(f"Error loading products from {products_path}: {e}")
-    else:
-        print(f"Warning: Products file not found: {products_path}")
-    
-    print(f"Total loaded: {len(documents)} documents from JSON files")
-    return documents
-
-
 def ingest_data(
     force_reindex: bool = False,
-    batch_size: int = 100,
-    use_json: bool = True
+    batch_size: int = 100
 ):
     """
-    Main ingestion function: Load, chunk, embed, and store in Milvus
+    Main ingestion function: Load from PostgreSQL, chunk, embed, and store in Milvus
     
     Args:
         force_reindex: If True, reindex even if already chunked
         batch_size: Batch size for processing
-        use_json: If True, load from JSON files (default). If False, load from PostgreSQL
     """
-    print(f"Starting data ingestion to Milvus...")
+    print(f"Starting data ingestion from PostgreSQL to Milvus...")
     
-    if use_json:
-        # Load from JSON files (default)
-        products = load_data_from_json()
-    else:
-        # Load from PostgreSQL
-        products = load_products_from_postgres(chunked_only=False)
+    # Load from PostgreSQL
+    products = load_products_from_postgres(chunked_only=False)
     
     if not products:
-        print("No documents found")
+        print("No documents found in PostgreSQL")
         return
     
-    # Filter products that need processing (only relevant for PostgreSQL)
-    if not use_json and not force_reindex:
+    # Filter products that need processing
+    if not force_reindex:
         products_to_process = [p for p in products if not p.get("chunked", False)]
     else:
         products_to_process = products
     
     if not products_to_process:
-        if use_json:
-            print("No documents to process")
-        else:
-            print("All products are already chunked. Use force_reindex=True to reindex.")
+        print("All products are already chunked. Use force_reindex=True to reindex.")
         return
     
-    print(f"Processing {len(products_to_process)} documents...")
+    print(f"Processing {len(products_to_process)} documents from PostgreSQL...")
     
     # Create documents
-    documents = create_documents_from_products(products_to_process, force_chunk=force_reindex or use_json)
+    documents = create_documents_from_products(products_to_process, force_chunk=force_reindex)
     
     if not documents:
         print("No documents created")
@@ -314,12 +203,11 @@ def ingest_data(
     # Ingest to Milvus
     _ingest_to_milvus(documents, force_reindex)
     
-    # Update chunked flag for processed products (only for PostgreSQL)
-    if not use_json:
-        product_ids = list(set([p["id"] for p in products_to_process]))
-        update_chunked_flag(product_ids)
+    # Update chunked flag for processed products
+    product_ids = list(set([p["id"] for p in products_to_process]))
+    update_chunked_flag(product_ids)
     
-    print(f"Data ingestion complete! Indexed {len(documents)} documents from {len(products_to_process)} sources")
+    print(f"Data ingestion complete! Indexed {len(documents)} documents from {len(products_to_process)} PostgreSQL records")
 
 
 def _ingest_to_milvus(documents: List[Document], force_reindex: bool = False):
@@ -383,18 +271,15 @@ def _ingest_to_milvus(documents: List[Document], force_reindex: bool = False):
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Ingest data from JSON or PostgreSQL to Milvus")
+    parser = argparse.ArgumentParser(description="Ingest data from PostgreSQL to Milvus")
     parser.add_argument("--force-reindex", action="store_true", 
                        help="Force reindexing even if already chunked")
     parser.add_argument("--batch-size", type=int, default=100,
                        help="Batch size for processing")
-    parser.add_argument("--use-postgres", action="store_true",
-                       help="Use PostgreSQL instead of JSON files (default: JSON)")
     
     args = parser.parse_args()
     
     ingest_data(
         force_reindex=args.force_reindex,
-        batch_size=args.batch_size,
-        use_json=not args.use_postgres
+        batch_size=args.batch_size
     )

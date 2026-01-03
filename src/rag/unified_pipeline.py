@@ -2,6 +2,8 @@
 Unified RAG Pipeline using the production Vietnamese embeddings
 Works with the tech_embeddings collection from chunk_embedding pipeline
 """
+import re
+from datetime import datetime
 from typing import List, Dict, Optional, Set
 from langchain_core.documents import Document
 from rag.vietnamese_retriever import VietnameseRetriever
@@ -77,23 +79,26 @@ class UnifiedRAGPipeline:
         """
         
         try:
+            # Debug: Check record IDs
+            print(f"Enriching {len(record_ids)} records. IDs (sample): {record_ids[:10]}")
+            
             self.pg_client.cur.execute(sql, (record_ids,))
             rows = self.pg_client.cur.fetchall()
             
             # Create lookup dict
             product_info = {}
             for row in rows:
-                product_info[row[0]] = {
-                    "id": row[0],
-                    "source_url": row[1],
-                    "title": row[2],
-                    "category": row[3] or row[4],  # Vietnamese or English
-                    "brand": row[5],
-                    "model": row[6],
-                    "price": row[7],
-                    "content_type": row[8],
-                    "content_text": row[9],
-                    "images": row[10] if row[10] else []
+                product_info[row['id']] = {
+                    "id": row['id'],
+                    "source_url": row['source_url'],
+                    "title": row['full_title'],
+                    "category": row['category'] or row['category_eng'],  # Vietnamese or English
+                    "brand": row['brand'],
+                    "model": row['model'],
+                    "price": row['price'],
+                    "content_type": row['content_type'],
+                    "content_text": row['content_text'],
+                    "images": row['images'] if row['images'] else []
                 }
             
             # Enrich documents
@@ -122,6 +127,8 @@ class UnifiedRAGPipeline:
             return enriched
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"Warning: Could not enrich metadata: {e}")
             return documents
     
@@ -197,6 +204,25 @@ class UnifiedRAGPipeline:
                 
         return final_docs
 
+    def _extract_relevant_indices(self, text: str) -> List[int]:
+        """
+        Extract relevant source indices from LLM response
+        Expected format: RELEVANT_SOURCE_INDICES: [1, 2, 5]
+        """
+        indices = []
+        try:
+            match = re.search(r"RELEVANT_SOURCE_INDICES:\s*\[(.*?)\]", text)
+            if match:
+                content = match.group(1)
+                # Split by comma and convert to int
+                parts = [p.strip() for p in content.split(',') if p.strip()]
+                for p in parts:
+                    if p.isdigit():
+                        indices.append(int(p))
+        except Exception as e:
+            print(f"Error parsing indices: {e}")
+        return indices
+
     def query(
         self,
         query: str,
@@ -262,8 +288,6 @@ class UnifiedRAGPipeline:
         # print(f"Reranking to top-{top_n}...")
         # reranked_docs = self.reranker.rerank(query, all_docs, top_n=top_n)
         # print(f"Reranked to {len(reranked_docs)} documents")
-        
-        # Bypass reranking for faster testing
         reranked_docs = all_docs[:top_n]
         
         # Step 5: Format context for LLM
@@ -272,12 +296,20 @@ class UnifiedRAGPipeline:
         # Step 6: Generate response
         print("Generating response with Gemini (CoT)...")
         history = self.conversation_history if use_history else None
-        answer = self.llm_service.generate_response(
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        full_answer = self.llm_service.generate_response(
             prompt=query,
             context=context,
             conversation_history=history,
-            current_date="2026-01-02"
+            current_date=current_date
         )
+
+        # Parse relevant indices
+        relevant_indices = self._extract_relevant_indices(full_answer)
+        print(f"LLM identified relevant sources: {relevant_indices}")
+        
+        # Clean answer (remove the metadata line)
+        answer = re.sub(r"RELEVANT_SOURCE_INDICES:.*", "", full_answer).strip()
         
         # Step 7: Update conversation history
         if use_history:
@@ -285,12 +317,29 @@ class UnifiedRAGPipeline:
             self.conversation_history.append({"role": "assistant", "content": answer})
         
         # Step 8: Prepare sources
+        # Filter sources based on LLM selection
+        if relevant_indices:
+            final_docs_for_sources = []
+            for idx in relevant_indices:
+                zero_idx = idx - 1 # Convert 1-based [Nguồn X] to 0-based list index
+                if 0 <= zero_idx < len(reranked_docs):
+                    final_docs_for_sources.append(reranked_docs[zero_idx])
+            
+            # Fallback if filtering failed (e.g. invalid indices)
+            if not final_docs_for_sources:
+                 print("Warning: LLM returned indices but none matched. Falling back to all docs.")
+                 final_docs_for_sources = reranked_docs
+        else:
+            # Fallback if no indices returned
+            final_docs_for_sources = reranked_docs
+
         sources = []
-        for doc in reranked_docs:
+        for doc in final_docs_for_sources:
             sources.append({
                 "title": doc.metadata.get("title", "Unknown"),
                 "url": doc.metadata.get("source_url", ""),
                 "category": doc.metadata.get("category", ""),
+                "content_type": doc.metadata.get("content_type", "unknown"),
                 "brand": doc.metadata.get("brand", ""),
                 "model": doc.metadata.get("model", ""),
                 "price": doc.metadata.get("price", ""),
@@ -337,7 +386,10 @@ class UnifiedRAGPipeline:
             if model:
                 context_part += f"Model: {model}\n"
             if price:
-                context_part += f"Giá: {price:,} VNĐ\n"
+                try:
+                    context_part += f"Giá: {int(price):,} VNĐ\n"
+                except:
+                    context_part += f"Giá: {price} VNĐ\n"
             if url:
                 context_part += f"Link: {url}\n"
             context_part += f"Nội dung: {content}\n"
@@ -374,9 +426,7 @@ if __name__ == "__main__":
         
         # Test queries
         test_queries = [
-            "giới thiệu cho tôi 5 mẫu điện thoại trong tầm giá 20 triệu",
-            "Laptop gaming tốt nhất giá dưới 20 triệu",
-            "So sánh iPhone 15 và Samsung S24"
+            "giới thiệu cho tôi 10 mẫu điện thoại chơi genshin mượt giá rẻ"
         ]
         
         for query in test_queries:
@@ -392,7 +442,10 @@ if __name__ == "__main__":
                 print(f"\n{i}. {source['title']}")
                 print(f"   Brand: {source['brand']}, Model: {source['model']}")
                 if source['price']:
-                    print(f"   Price: {source['price']:,} VNĐ")
+                    try:
+                        print(f"   Price: {int(source['price']):,} VNĐ")
+                    except:
+                        print(f"   Price: {source['price']} VNĐ")
                 print(f"   URL: {source['url']}")
                 print(f"   Score: {source['score']:.4f}")
                 print(f"   Images: {len(source.get('images', []))}")

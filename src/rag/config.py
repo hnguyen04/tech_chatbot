@@ -44,8 +44,3 @@ DEVICE = os.getenv("DEVICE", "cpu")  # cpu or cuda
 
 # Evaluation Configuration
 EVAL_DATASET_PATH = os.getenv("EVAL_DATASET_PATH", "data/eval_dataset.json")
-
-# JSON Data Source Configuration
-JSON_DATA_PATH = os.getenv("JSON_DATA_PATH", "output")
-JSON_ARTICLES_FILE = os.getenv("JSON_ARTICLES_FILE", "tgdd_articles.json")
-JSON_PRODUCTS_FILE = os.getenv("JSON_PRODUCTS_FILE", "tgdd_products.json")

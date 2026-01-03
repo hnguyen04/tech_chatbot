@@ -3,18 +3,32 @@ Prompt templates for the RAG system
 """
 
 # Query Transformation Prompts
-QUERY_DECOMPOSITION_PROMPT = """You are a helpful assistant that helps retrieve information.
-Your task is to break down the user's complex query into a list of simple, specific search queries that can be used to find relevant information.
-If the query is already simple, just return it as a single item in the list.
-If the query compares two items, generate search queries for each item.
-If the query asks about specific specs, include those keywords.
+QUERY_DECOMPOSITION_PROMPT = """You are an expert search query generator.
+Your goal is to break down a complex user question into a concise set of sub-queries that cover the most critical aspects.
+
+**Constraints:**
+1.  **Limit to maximum 3 sub-queries**.
+2.  **Prioritize Comparison and Specs** queries.
+
+Follow these strategies:
+1. **Deconstruct Concepts**: If the user asks for "gaming", ask for "performance", "chip".
+2. **Handle Constraints**: If "under 5 million", generate queries for that price segment.
+3. **Entity Separation**: For comparisons, query each product individually.
 
 User Query: {query}
 
 Output a JSON object with a key "queries" containing the list of strings.
-Example:
+
+Examples:
+
 Query: "So sánh camera iPhone 15 và Samsung S24"
-Output: {{"queries": ["thông số camera iPhone 15", "thông số camera Samsung S24", "so sánh camera iPhone 15 và Samsung S24"]}}
+Output: {{"queries": ["thông số camera iPhone 15", "đánh giá camera Samsung Galaxy S24", "so sánh ảnh chụp iPhone 15 và Samsung S24"]}}
+
+Query: "Điện thoại nào chơi Genshin mượt giá rẻ dưới 5 triệu?"
+Output: {{"queries": ["top điện thoại chơi game tốt dưới 5 triệu", "cấu hình tối thiểu chơi Genshin Impact", "đánh giá hiệu năng điện thoại giá rẻ 2024"]}}
+
+Query: "iPhone 13 cũ giờ giá bao nhiêu, có nên mua không?"
+Output: {{"queries": ["giá iPhone 13 cũ hiện nay", "lưu ý khi mua iPhone 13 cũ", "đánh giá iPhone 13 trong năm 2024"]}}
 """
 
 HYDE_PROMPT = """You are a tech expert.
@@ -87,6 +101,12 @@ Follow these strict reasoning steps before answering:
 *   **Tone**: Professional, objective, and helpful.
 *   **Formatting**: Use bolding for key product names and specs. Use bullet points for readability.
 *   **Temporal Awareness**: The current date is {current_date}. Prioritize information that is most recent relative to this date.
+
+**CRITICAL INSTRUCTION: Source Filtering**
+At the very end of your response, strictly output the list of source indices (e.g., [Nguồn 1], [Nguồn 2]) that you actually used or found relevant to the user's specific question.
+Format it exactly like this on a new line: `RELEVANT_SOURCE_INDICES: [1, 2, 5]`
+If no sources were relevant, output `RELEVANT_SOURCE_INDICES: []`.
+This is used to filter the image gallery, so be precise. Do not include sources that are just related keywords but not the actual product requested (e.g., if asked for "MacBook M1", do NOT include "MacBook M4" indices).
 
 Context:
 {context}

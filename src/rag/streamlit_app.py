@@ -37,14 +37,13 @@ def initialize_session_state():
 def clean_json_string(json_str: str) -> str:
     """
     Clean potential issues in JSON string from LLM.
-    - Remove // comments
     - Fix trailing commas
+    - Remove markdown fences if present
     """
-    # Remove // comments
-    json_str = re.sub(r"//.*", "", json_str)
+    # Remove markdown fences just in case
+    json_str = json_str.replace("```json", "").replace("```", "")
     
     # Remove trailing commas before } or ]
-    # This is a basic regex, might not cover all edge cases but helps with common LLM errors
     json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
     
     return json_str.strip()
@@ -74,7 +73,7 @@ def render_response_with_charts(text: str):
             try:
                 # Clean up JSON
                 cleaned_json = clean_json_string(part)
-                chart_spec = json.loads(cleaned_json)
+                chart_spec = json.loads(cleaned_json, strict=False)
                 
                 # Basic validation
                 if not isinstance(chart_spec, dict):
@@ -90,7 +89,7 @@ def render_response_with_charts(text: str):
                     if start != -1 and end != -1:
                         sub_part = part[start:end+1]
                         cleaned_json = clean_json_string(sub_part)
-                        chart_spec = json.loads(cleaned_json)
+                        chart_spec = json.loads(cleaned_json, strict=False)
                         if not isinstance(chart_spec, dict):
                              raise ValueError(f"Chart specification must be a dictionary, got {type(chart_spec)}")
                         st.vega_lite_chart(chart_spec, width="stretch")
@@ -121,11 +120,29 @@ def render_product_gallery(sources: list):
     """
     Render a horizontal gallery of products with images.
     """
-    # Filter sources that have images and are products
+    # Filter sources that have images and are strictly PRODUCTS (not articles)
+    # This improves relevance significantly (e.g. MacBook M1 vs M4)
     product_sources = [
         s for s in sources 
         if s.get("images") and isinstance(s.get("images"), list) and len(s["images"]) > 0
+        and s.get("content_type") == "product"
     ]
+    
+    # Heuristic to find the best image (not a banner/logo)
+    def get_best_image(img_list):
+        bad_keywords = ["banner", "logo", "icon", "thumb", "fallback", "promotion", "quang-cao"]
+        # Look for images that look like actual product shots (e.g. contain 'Products/Images' for TGDD)
+        for url in img_list:
+            u_low = url.lower()
+            if "products/images" in u_low and not any(k in u_low for k in bad_keywords):
+                return url
+        
+        # Fallback to first non-bad keyword if possible
+        for url in img_list:
+            if not any(k in url.lower() for k in bad_keywords):
+                return url
+                
+        return img_list[0] # ultimate fallback
     
     # Deduplicate by record_id
     seen_ids = set()
@@ -142,19 +159,38 @@ def render_product_gallery(sources: list):
     st.markdown("### 🛍️ Sản phẩm liên quan")
     
     # Display up to 4 products
-    cols = st.columns(min(len(unique_products), 4))
+    display_count = min(len(unique_products), 4)
+    cols = st.columns(display_count)
     
-    for i, col in enumerate(cols):
+    for i in range(display_count):
         prod = unique_products[i]
-        with col:
-            # Get first image
-            img_url = prod["images"][0]
+        with cols[i]:
+            # Get best image
+            img_url = get_best_image(prod["images"])
             st.image(img_url, width="stretch")
             
             # Title & Price
-            st.markdown(f"**{prod['title']}**")
+            title = prod['title']
+            # Fix common Vietnamese typo/missing accents in title
+            if title.lower().startswith("san pham"):
+                title = "Sản phẩm" + title[8:]
+            elif title.lower().startswith("sản pham"):
+                 title = "Sản phẩm" + title[8:]
+                 
+            st.markdown(f"**{title}**")
             if prod.get("price"):
-                st.caption(f"💰 {prod['price']:,} VNĐ")
+                price = prod['price']
+                if isinstance(price, (int, float)):
+                    st.caption(f"💰 {price:,} VNĐ")
+                else:
+                    # Check if string is digit-only
+                    if str(price).replace('.', '').isdigit():
+                        try:
+                            st.caption(f"💰 {int(float(price)):,} VNĐ")
+                        except:
+                            st.caption(f"💰 {price} VNĐ")
+                    else:
+                        st.caption(f"💰 {price} VNĐ")
             else:
                 st.caption("Liên hệ")
             
@@ -173,39 +209,39 @@ def main():
     
     initialize_session_state()
     
-    st.title("Tech Chatbot - RAG System")
-    st.markdown("Ask questions about technology products and articles!")
+    st.title("Tech Chatbot - Hệ thống RAG")
+    st.markdown("Hỏi về sản phẩm công nghệ và bài viết đánh giá!")
     
     # Sidebar for configuration
     with st.sidebar:
-        st.header("Configuration")
+        st.header("Cấu hình")
         
         top_k = st.slider(
-            "Top K (Retrieval)",
+            "Top K (Tìm kiếm)",
             min_value=5,
             max_value=50,
             value=st.session_state.top_k,
-            help="Number of documents to retrieve"
+            help="Số lượng tài liệu truy xuất từ database"
         )
         st.session_state.top_k = top_k
         
         top_n = st.slider(
-            "Top N (Reranking)",
+            "Top N (Xếp hạng)",
             min_value=3,
             max_value=20,
             value=st.session_state.top_n,
-            help="Number of documents after reranking"
+            help="Số lượng tài liệu sau khi xếp hạng lại"
         )
         st.session_state.top_n = top_n
         
-        if st.button("Clear Chat History"):
+        if st.button("Xóa lịch sử trò chuyện"):
             st.session_state.pipeline.clear_history()
             st.session_state.messages = []
             st.rerun()
         
         st.markdown("---")
-        st.markdown("### System Info")
-        st.info(f"Retrieval: Top {top_k} → Reranking: Top {top_n}")
+        st.markdown("### Thông tin hệ thống")
+        st.info(f"Truy xuất: Top {top_k} → Xếp hạng: Top {top_n}")
     
     # Main chat interface
     for message in st.session_state.messages:
@@ -221,7 +257,7 @@ def main():
                 
                 # 3. Sources Expander
                 if "sources" in message:
-                    with st.expander("Sources Details"):
+                    with st.expander("Nguồn trích dẫn"):
                         for i, source in enumerate(message["sources"], 1):
                             st.markdown(f"**{i}. {source['title']}**")
                             if source.get("url"):
@@ -233,7 +269,7 @@ def main():
                 st.markdown(message["content"])
     
     # Chat input
-    if prompt := st.chat_input("Ask a question about tech products..."):
+    if prompt := st.chat_input("Hỏi về sản phẩm công nghệ..."):
         # Add user message to history
         st.session_state.messages.append({"role": "user", "content": prompt})
         
@@ -243,7 +279,7 @@ def main():
         
         # Generate response
         with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
+            with st.spinner("Đang suy nghĩ..."):
                 try:
                     result = st.session_state.pipeline.query(
                         query=prompt,
@@ -252,7 +288,7 @@ def main():
                         use_history=True
                     )
                     
-                    answer = result.get("answer", "Sorry, I couldn't generate a response.")
+                    answer = result.get("answer", "Xin lỗi, tôi không thể tạo phản hồi.")
                     sources = result.get("sources", [])
                     
                     # 1. Render Gallery
@@ -263,7 +299,7 @@ def main():
                     
                     # 3. Sources Expander
                     if sources:
-                        with st.expander(f"Sources ({len(sources)} documents)"):
+                        with st.expander(f"Nguồn trích dẫn ({len(sources)} tài liệu)"):
                             for i, source in enumerate(sources, 1):
                                 st.markdown(f"**{i}. {source['title']}**")
                                 if source.get("url"):
@@ -279,7 +315,7 @@ def main():
                     })
                     
                     # Metadata
-                    st.caption(f"Retrieved: {result.get('retrieved_count', 0)} | "
+                    st.caption(f"Tìm kiếm: {result.get('retrieved_count', 0)} | "
                               f"Reranked: {result.get('reranked_count', 0)}")
                 
                 except Exception as e:

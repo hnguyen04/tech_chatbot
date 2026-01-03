@@ -1,11 +1,19 @@
 import psycopg2
 from psycopg2.extras import execute_values, RealDictCursor
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 class PostgresClient:
     def __init__(self):
-        load_dotenv()
+        # Explicitly load .env from project root
+        current_file = Path(__file__).resolve()
+        project_root = current_file.parent.parent.parent
+        env_path = project_root / '.env'
+        load_dotenv(dotenv_path=env_path, override=True)
+
+        print(f"Loaded .env from {env_path}")
+
         self.host = os.getenv("POSTGRES_DB_HOST")
         self.port = os.getenv("POSTGRES_DB_PORT")
         self.dbname = os.getenv("POSTGRES_DB_NAME")
@@ -98,7 +106,3 @@ class PostgresClient:
             self.cur.close()
         if self.conn:
             self.conn.close()
-
-
-# Usage
-pg_client = PostgresClient()
