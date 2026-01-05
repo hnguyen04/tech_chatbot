@@ -50,24 +50,24 @@ class TGGDCrawler:
                 try: 
                     page_docs = self.parse_and_download(page)
                     self.save_json(page_docs, f"tgdd_articles_page_{page}.json")
-                    print(f"✅ Saved {len(page_docs)} articles from page {page}")
+                    print(f"Saved {len(page_docs)} articles from page {page}")
                 except Exception as e:
-                    print(f"❌ Error occurred while crawling page {page}: {e}")
+                    print(f"Error occurred while crawling page {page}: {e}")
                     pass
 
 
 
         # Crawl products if needed
         if self.should_crawl_products:
-            print("🛒 Starting product crawl ...")
+            print("Starting product crawl ...")
             for category in self.config.PRODUCT_CATEGORY_LIST:
-                print(f"🛒 Crawling category: {category} ...")
+                print(f"Crawling category: {category} ...")
                 product_crawler = TGDDProductCrawler(category=category, crawl_limit=self.products_crawl_limit)
                 products = product_crawler.run()  # danh sách dict hoặc ArticleDocument
                 all_products.extend([doc.to_dict() for doc in products])
 
             products_file = self.save_json(all_products, "tgdd_products.json")
-            print(f"✅ Saved {len(all_products)} products to {products_file}")
+            print(f"Saved {len(all_products)} products to {products_file}")
     # -------------------------------
     # Steps
     # -------------------------------
@@ -75,7 +75,7 @@ class TGGDCrawler:
     def parse_and_download(self, page: int) -> list[dict]:
         html = self.api_client.fetch_articles_html(page)
         articles = self.parser.parse_list(html)
-        print(f"  ✔ Found {len(articles)} items")
+        print(f"  Found {len(articles)} items")
         detailed = self.parser.fetch_all_details(articles, max_workers=8, skip_images=True)
         return self.build_documents(detailed)
 
@@ -85,11 +85,11 @@ class TGGDCrawler:
     def save_json(self, docs: list[dict], filename: str) -> str:
         if self.s3_storage:
             key = f"{self.output_dir}/{filename}"
-            print(f"💾 Saving to S3: {key} ...")
+            print(f"Saving to S3: {key} ...")
             return self.s3_storage.save_json(docs, key)
 
         path = os.path.join(self.output_dir, filename)
-        print(f"💾 Saving to local file: {path} ...")
+        print(f"Saving to local file: {path} ...")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(docs, f, ensure_ascii=False, indent=2)
         return path

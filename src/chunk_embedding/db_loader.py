@@ -101,7 +101,7 @@ class PostgresLoader:
             self.client.conn.commit()
         except Exception as e:
             self.client.conn.rollback()
-            print(f"❌ Failed to mark chunked: {e}")
+            print(f"Failed to mark chunked: {e}")
 
     # -------------------------
     # CLEANUP

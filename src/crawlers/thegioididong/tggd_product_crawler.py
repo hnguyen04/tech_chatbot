@@ -74,7 +74,7 @@ class TGDDProductCrawler:
 
         # Lấy lại danh sách item sau khi load xong (DOM mới nhất)
         li_elements = self.driver.find_elements(By.CSS_SELECTOR, "ul.listproduct li.item")
-        print(f"🛒 Tìm thấy {len(li_elements)} sản phẩm trong danh mục {self.category}")
+        print(f"Found {len(li_elements)} products in category {self.category}")
 
         for index, li in enumerate(li_elements):
             if index > self.crawl_limit:  
@@ -87,7 +87,7 @@ class TGDDProductCrawler:
 
                 base_price = li.find_element(By.CSS_SELECTOR, "strong.price").text.strip()
 
-                print(f"🛒 [{index+1}/{len(li_elements)}] Lấy sản phẩm: {base_title} - {base_url}")
+                print(f"[{index+1}/{len(li_elements)}] Fetching product: {base_title} - {base_url}")
 
                 # Append kết quả
                 products.append({
@@ -148,7 +148,7 @@ class TGDDProductCrawler:
     
     def get_product_detail(self, product_url: str) -> dict:
 
-        print(f"🛒 Lấy chi tiết sản phẩm: {product_url}")
+        print(f"Fetching product detail: {product_url}")
 
         def retry_on_stale(func, retries=3, sleep=0.2):
             for _ in range(retries):
@@ -360,9 +360,9 @@ class TGDDProductCrawler:
 
     def run(self) -> list[ArticleDocument]:
         """Chạy crawler, trả về list ArticleDocument"""
-        print("🛒 Lấy danh sách sản phẩm ...")
+        print("Fetching product list ...")
         articles = self.get_articles()
         self.close()
-        print(f"🛒 Hoàn thành lấy {len(articles)} sản phẩm.")
+        print(f"Completed fetching {len(articles)} products.")
         return articles
 

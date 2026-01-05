@@ -14,7 +14,7 @@ import unicodedata
 
 class PreprocessPipeline:
     """
-    ✅ STREAMING PIPELINE
+    STREAMING PIPELINE
     - Không load toàn bộ JSON
     - Batch nhỏ cho LLM
     - Xử lý hết mọi bản ghi
@@ -45,7 +45,7 @@ class PreprocessPipeline:
 
             buffer.append(clean)
 
-            # ✅ CHANGED: xử lý theo batch
+            # CHANGED: xử lý theo batch
             if len(buffer) >= self.batch_size:
                 self._process_batch(buffer)
                 buffer.clear()
@@ -58,7 +58,7 @@ class PreprocessPipeline:
         if not records:
             return
 
-        # ✅ batch nhỏ → không vượt token Gemini
+        # batch nhỏ → không vượt token Gemini
         title_results = self.title_enricher.run_batch(records)
         product_ids = self.db_writer.insert_products(records, title_results)
         print(f"Successfully inserted {len(product_ids)} products title enriched.")
@@ -153,7 +153,7 @@ class PreprocessPipeline:
                 existing = {row[0] for row in cur.fetchall()}
         except Exception as e:
             self.db_writer.client.conn.rollback()
-            print("⚠️ filter_existing failed, fallback to insert-all:", e)
+            print("WARNING: filter_existing failed, fallback to insert-all:", e)
             return records   # fallback: insert hết, để DB xử lý
 
         return [r for r in records if r.source_url not in existing]

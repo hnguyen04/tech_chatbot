@@ -21,7 +21,7 @@ class CellphonesSCrawler:
         )
         self.s3_storage = s3_storage or S3Storage()
 
-        # ✅ Tạo folder logical trên S3 theo timestamp
+        # Create folder logical on S3 by timestamp
         self.s3_folder = datetime.datetime.now().strftime("cellphones_%Y%m%d_%H%M%S")
 
     # -------------------------------
@@ -29,13 +29,13 @@ class CellphonesSCrawler:
     # -------------------------------
 
     def run(self, skip_images: bool = True):
-        print("🟢 Starting CellphonesS crawler (NO LOCAL SAVE)")
-        print(f"📦 S3 folder: output/{self.s3_folder}/")
+        print("Starting CellphonesS crawler (NO LOCAL SAVE)")
+        print(f"S3 folder: output/{self.s3_folder}/")
 
         batch_index = 1
 
         for batch_articles in self.parser.fetch_articles_by_click():
-            print(f"🆕 Batch {batch_index}: {len(batch_articles)} articles")
+            print(f"Batch {batch_index}: {len(batch_articles)} articles")
 
             detailed_articles = self.parser.fetch_all_details(
                 batch_articles, skip_images=skip_images
@@ -44,24 +44,24 @@ class CellphonesSCrawler:
             docs = self.build_documents(detailed_articles)
 
             if not docs:
-                print("⚠️ Batch rỗng, bỏ qua")
+                print("Warning: Batch empty, skipping")
                 continue
 
             filename = f"cellphones_batch_{str(batch_index).zfill(3)}.json"
 
-            # ✅ Convert JSON trong memory
+            # Convert JSON in memory
             json_content = json.dumps(docs, ensure_ascii=False, indent=2)
 
-            # ✅ Upload trực tiếp lên S3, KHÔNG FILE LOCAL
+            # Upload directly to S3, NO LOCAL FILE
             if self.s3_storage:
                 s3_key = f"output/{self.s3_folder}/{filename}"
                 try:
                     self.s3_storage.save_json_content(json_content, s3_key)
-                    print(f"☁️ Uploaded to S3 → {s3_key} at {datetime.datetime.now().isoformat()}")
+                    print(f"Uploaded to S3 -> {s3_key} at {datetime.datetime.now().isoformat()}")
                 except Exception as e:
-                    print(f"❌ Upload S3 lỗi: {e}")
+                    print(f"Upload S3 error: {e}")
             else:
-                print("⚠️ Chưa cấu hình s3_storage")
+                print("Warning: s3_storage not configured")
 
             batch_index += 1
 

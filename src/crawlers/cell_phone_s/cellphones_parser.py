@@ -48,14 +48,14 @@ class CellphonesSParser:
         seen_urls = set()
 
         for i in range(self.max_clicks):
-            print(f"👉 Click {i+1}")
+            print(f"Click {i+1}")
 
             try:
                 btn = self.driver.find_element(By.XPATH, '//button[span[text()="Xem thêm"]]')
                 self.driver.execute_script("arguments[0].click();", btn)
                 time.sleep(self.wait_time)
             except Exception:
-                print("✅ Không còn nút Xem thêm")
+                print("Không còn nút xem thêm")
                 break
 
             anchors = self.driver.find_elements(By.XPATH, '//a[starts-with(@href,"/sforum/")]')
@@ -125,7 +125,7 @@ class CellphonesSParser:
             return article
 
         except Exception as e:
-            print(f"⚠️ Lỗi chi tiết {url}: {e}")
+            print(f"Warning: Error fetching detail {url}: {e}")
             return None
 
     def fetch_all_details(self, articles: list[dict], skip_images=True):

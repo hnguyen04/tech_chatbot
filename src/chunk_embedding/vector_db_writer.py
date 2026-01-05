@@ -28,9 +28,9 @@ class MilvusWriter:
                 uri=host,
                 token=api_key
             )
-            print(f"✅ Connected to Zilliz Cloud Milvus (ORM) at {host} with alias '{self.alias}'")
+            print(f"Connected to Zilliz Cloud Milvus (ORM) at {host} with alias '{self.alias}'")
         except Exception as e:
-            print(f"❌ Failed to connect to Milvus ORM: {e}")
+            print(f"Failed to connect to Milvus ORM: {e}")
             raise e
 
     def create_collection(
@@ -62,7 +62,7 @@ class MilvusWriter:
         ]
         schema = CollectionSchema(fields, description="Product chunks embeddings")
         collection = Collection(name=collection_name, schema=schema, using=self.alias)
-        print(f"✅ Created collection '{collection_name}' with dim={dim} and fields: record_id, chunk_index, embedding, text")
+        print(f"Created collection '{collection_name}' with dim={dim} and fields: record_id, chunk_index, embedding, text")
 
         # Index
         if not index_params:
@@ -79,11 +79,11 @@ class MilvusWriter:
                 **index_params
             }
         )
-        print(f"✅ Created {index_type} index on '{collection_name}.embedding' with metric={metric_type}")
+        print(f"Created {index_type} index on '{collection_name}.embedding' with metric={metric_type}")
 
         # Load collection
         collection.load()
-        print(f"✅ Collection '{collection_name}' is loaded and ready for insert/query")
+        print(f"Collection '{collection_name}' is loaded and ready for insert/query")
 
         return collection
     
@@ -110,9 +110,9 @@ class MilvusWriter:
                 [doc["text"] for doc in embedded_docs],
             ]
             mr = collection.insert(data)
-            print(f"✅ Inserted {len(embedded_docs)} vectors into '{collection_name}'")
+            print(f"Inserted {len(embedded_docs)} vectors into '{collection_name}'")
         except Exception as e:
-            print(f"❌ Failed to insert into Milvus: {e}")
+            print(f"Failed to insert into Milvus: {e}")
             raise e
     
     def drop_collection(self, collection_name: str):
@@ -122,6 +122,6 @@ class MilvusWriter:
         from pymilvus.orm import utility
         if utility.has_collection(collection_name, using=self.alias):
             utility.drop_collection(collection_name, using=self.alias)
-            print(f"✅ Dropped collection '{collection_name}'")
+            print(f"Dropped collection '{collection_name}'")
         else:
             print(f"Collection '{collection_name}' does not exist")

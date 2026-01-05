@@ -100,7 +100,7 @@ def main():
             print(f"\n▶ Processing {full_uri}")
 
             # ==================================
-            # ✅ CHECK processed TRƯỚC KHI RUN
+            # CHECK processed TRƯỚC KHI RUN
             # ==================================
             if db_writer.is_json_processed(key):
                 print(f"⏭  Skipped (already processed): {key}")
@@ -112,14 +112,14 @@ def main():
                 pipeline.run(docs)
 
                 # ==================================
-                # ✅ MARK processed SAU KHI THÀNH CÔNG
+                # MARK processed SAU KHI THÀNH CÔNG
                 # ==================================
                 db_writer.mark_json_processed(key)
-                print(f"✅ Marked processed: {key}")
+                print(f"Marked processed: {key}")
 
             except Exception as e:
-                # ❌ KHÔNG mark processed nếu lỗi
-                print(f"❌ Failed processing {key}: {e}")
+                # KHÔNG mark processed nếu lỗi
+                print(f"Failed processing {key}: {e}")
 
         return
 

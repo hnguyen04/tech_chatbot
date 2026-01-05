@@ -58,7 +58,7 @@ class S3Storage:
 
     def stream_json(self, key: str):
         """
-        ✅ CHANGED:
+        CHANGED:
         - Stream JSON array từ S3
         - Không load toàn bộ object
         """
