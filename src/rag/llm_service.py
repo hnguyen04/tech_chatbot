@@ -40,7 +40,8 @@ class GeminiLLMService:
         self.llm = ChatGoogleGenerativeAI(
             model=model_name,
             temperature=0.7,
-            google_api_key=GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
+            google_api_key=GEMINI_API_KEY or os.getenv("GEMINI_API_KEY"),
+            convert_system_message_to_human=True,
         )
         self.raw_model = genai.GenerativeModel(model_name)
     
