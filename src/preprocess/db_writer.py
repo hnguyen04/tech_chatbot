@@ -21,6 +21,8 @@ class PostgresWriter:
         self._spec_key_registry = None
         self._unit_registry = None
 
+    # ---------- INSERT ----------
+
     def insert_products(
         self,
         cleaned: List[CleanRecord],
@@ -52,8 +54,8 @@ class PostgresWriter:
         sql = """
         INSERT INTO products
         (source_url, domain, crawl_date, content_type, brand, model, product_line, full_title,
-        full_title_eng, category, category_eng, price, content_text, images,
-        llm_processed, chunked)
+         full_title_eng, category, category_eng, price, content_text, images,
+         llm_processed, chunked)
         VALUES %s
         ON CONFLICT (source_url) DO NOTHING
         RETURNING id;
@@ -61,10 +63,10 @@ class PostgresWriter:
 
         try:
             execute_values(self.client.cur, sql, rows)
-            ids = [row[0] for row in self.client.cur.fetchall()]
+            ids = [row["id"] for row in self.client.cur.fetchall()]
             self.client.conn.commit()
             return ids
-        except Exception as e:
+        except Exception:
             self.client.conn.rollback()
             raise
 
@@ -80,8 +82,8 @@ class PostgresWriter:
                     _truncate(item.standardized_value_eng, MAX_STR_200),
                     _truncate(item.category, MAX_STR_50),
                     _truncate(item.category_eng, MAX_STR_50),
-                    item.numerical_value_list,
-                    item.unit_list,
+                    Json(item.numerical_value_list or []),
+                    Json(item.unit_list or []),
                 )
             )
 
@@ -91,23 +93,11 @@ class PostgresWriter:
         sql = """
         INSERT INTO product_specifications
         (product_id, standardized_key, standardized_key_eng, standardized_value,
-        standardized_value_eng, category, category_eng, numerical_value_list, unit_list)
+         standardized_value_eng, category, category_eng,
+         numerical_value_list, unit_list)
         VALUES %s;
         """
-        rows = [
-            (
-                r[0],
-                r[1],
-                r[2],
-                r[3],
-                r[4],
-                r[5],
-                r[6],
-                Json(r[7] or []),
-                Json(r[8] or []),
-            )
-            for r in rows
-        ]
+
         execute_values(self.client.cur, sql, rows)
         self.client.conn.commit()
 
@@ -120,7 +110,6 @@ class PostgresWriter:
         execute_values(self.client.cur, sql, rows)
         self.client.conn.commit()
 
-
     def insert_raw_units(self, rows):
         sql = """
         INSERT INTO raw_unit_registry (raw_unit, normalized_unit)
@@ -129,6 +118,8 @@ class PostgresWriter:
         """
         execute_values(self.client.cur, sql, rows)
         self.client.conn.commit()
+
+    # ---------- SELECT ----------
 
     def fetch_spec_keys_missing_enrichment(self, limit: int):
         sql = """
@@ -139,9 +130,20 @@ class PostgresWriter:
         """
         with self.client.conn.cursor() as cur:
             cur.execute(sql, (limit,))
-            cols = [c[0] for c in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+            return cur.fetchall()   # list[dict]
 
+    def is_json_processed(self, s3_key: str) -> bool:
+        sql = """
+        SELECT processed
+        FROM json_check
+        WHERE s3_key = %s
+        """
+        with self.client.conn.cursor() as cur:
+            cur.execute(sql, (s3_key,))
+            row = cur.fetchone()
+            return bool(row and row["processed"])
+
+    # ---------- UPDATE ----------
 
     def update_spec_key_enrichment(self, rows):
         sql = """
@@ -156,32 +158,31 @@ class PostgresWriter:
             cur.executemany(sql, rows)
         self.client.conn.commit()
 
-    def load_spec_key_registry(self):
+    def mark_json_processed(self, s3_key: str):
+        sql = """
+        INSERT INTO json_check (s3_key, processed)
+        VALUES (%s, TRUE)
+        ON CONFLICT (s3_key)
+        DO UPDATE SET
+            processed = TRUE,
+            updated_at = NOW();
         """
-        Cache:
-        {
-            normalized_key_lower: {
-                standardized_key,
-                standardized_key_eng,
-                category,
-                category_eng
-            }
-        }
+        with self.client.conn.cursor() as cur:
+            cur.execute(sql, (s3_key,))
+        self.client.conn.commit()
 
-        Key được tạo từ:
-        - raw_key
-        - normalized_key
-        (đều qua cùng normalize function)
-        """
+    # ---------- CACHE LOAD ----------
+
+    def load_spec_key_registry(self):
         if self._spec_key_registry is not None:
             return self._spec_key_registry
 
         sql = """
         SELECT raw_key,
-            normalized_key,
-            standardized_key_eng,
-            category_vi,
-            category_eng
+               normalized_key,
+               standardized_key_eng,
+               category_vi,
+               category_eng
         FROM spec_key_registry
         """
         with self.client.conn.cursor() as cur:
@@ -197,32 +198,24 @@ class PostgresWriter:
             k = re.sub(r"\s+", " ", k)
             return k
 
-        for raw_key, normalized_key, eng, cat_vi, cat_eng in rows:
+        for row in rows:
             entry = {
-                "standardized_key": normalized_key,
-                "standardized_key_eng": eng,
-                "category": cat_vi,
-                "category_eng": cat_eng,
+                "standardized_key": row["normalized_key"],
+                "standardized_key_eng": row["standardized_key_eng"],
+                "category": row["category_vi"],
+                "category_eng": row["category_eng"],
             }
 
-            # 🔹 key từ raw_key
-            if raw_key:
-                registry[_norm(raw_key)] = entry
+            if row["raw_key"]:
+                registry[_norm(row["raw_key"])] = entry
 
-            # 🔹 key từ normalized_key (rất quan trọng)
-            if normalized_key:
-                registry[_norm(normalized_key)] = entry
+            if row["normalized_key"]:
+                registry[_norm(row["normalized_key"])] = entry
 
         self._spec_key_registry = registry
         return registry
 
     def load_unit_registry(self):
-        """
-        Cache:
-        {
-            raw_unit_lower: normalized_unit
-        }
-        """
         if self._unit_registry is not None:
             return self._unit_registry
 
@@ -235,35 +228,12 @@ class PostgresWriter:
             rows = cur.fetchall()
 
         registry = {}
-        for raw, norm in rows:
+        for row in rows:
+            raw = row["raw_unit"]
             if not raw:
                 continue
             key = unicodedata.normalize("NFKC", raw).lower().strip()
-            registry[key] = norm
+            registry[key] = row["normalized_unit"]
 
         self._unit_registry = registry
         return registry
-    
-    def is_json_processed(self, s3_key: str) -> bool:
-        sql = """
-        SELECT processed
-        FROM json_check
-        WHERE s3_key = %s
-        """
-        with self.client.conn.cursor() as cur:
-            cur.execute(sql, (s3_key,))
-            row = cur.fetchone()
-            return bool(row and row[0])
-        
-    def mark_json_processed(self, s3_key: str):
-        sql = """
-        INSERT INTO json_check (s3_key, processed)
-        VALUES (%s, TRUE)
-        ON CONFLICT (s3_key)
-        DO UPDATE SET
-            processed = TRUE,
-            updated_at = NOW();
-        """
-        with self.client.conn.cursor() as cur:
-            cur.execute(sql, (s3_key,))
-        self.client.conn.commit()

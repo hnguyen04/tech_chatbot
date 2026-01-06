@@ -173,6 +173,18 @@ class PreprocessPipeline:
 
         return key
 
+    def _normalize_unit(self, unit: str) -> str:
+        if not unit:
+            return unit
+
+        unit = unit.lower().strip()
+
+        # normalize micro variants
+        unit = unit.replace("µ", "u")   # U+00B5
+        unit = unit.replace("μ", "u")   # U+03BC
+
+        return unit
+    
     def _extract_numbers_and_units(self, text: str):
         if not text:
             return [], []
@@ -196,15 +208,24 @@ class PreprocessPipeline:
         for match in pattern.finditer(text_norm):
             num_str, raw_unit = match.groups()
 
+            # parse number
             try:
                 value = float(num_str.replace(",", "."))
                 numbers.append(value)
             except ValueError:
                 continue
 
-            units.append(self.unit_registry[raw_unit.lower()])
+            # normalize unit
+            norm_unit = self._normalize_unit(raw_unit)
 
-        return numbers, list(dict.fromkeys(units))  
+            mapped = self.unit_registry.get(norm_unit)
+            if mapped:
+                units.append(mapped)
+            else:
+                units.append(norm_unit)
+
+        # remove duplicate units, keep order
+        return numbers, list(dict.fromkeys(units))
 
     def _normalize_specs_from_registry(self, rec: CleanRecord) -> List[SpecItem]:
         if not rec.product_blob:

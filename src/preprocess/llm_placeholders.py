@@ -240,4 +240,14 @@ class SpecKeyEnricher:
         if not isinstance(result, list):
             raise ValueError("LLM did not return JSON array")
 
-        return result
+        enriched = []
+
+        for src, llm_item in zip(rows, result):
+            enriched.append({
+                "id": int(src["id"]),  # ✅ ID luôn lấy từ DB
+                "standardized_key_eng": llm_item.get("standardized_key_eng"),
+                "category_vi": llm_item.get("category_vi"),
+                "category_eng": llm_item.get("category_eng"),
+            })
+
+        return enriched

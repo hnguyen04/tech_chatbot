@@ -7,6 +7,7 @@ Pipeline steps:
 
 import json
 import os
+import traceback
 from typing import Iterable
 from dotenv import load_dotenv
 import google.generativeai as genai
@@ -120,6 +121,9 @@ def main():
             except Exception as e:
                 # KHÔNG mark processed nếu lỗi
                 print(f"Failed processing {key}: {e}")
+                # traceback.print_exc()
+                # print(f"Failed processing {key}: {e}")
+                # return
 
         return
 

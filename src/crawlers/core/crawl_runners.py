@@ -14,6 +14,7 @@ from crawlers.thegioididong.tggd_article_parser import TGGDArticleParser
 from crawlers.thegioididong.tggd_product_crawler import TGDDProductCrawler
 from crawlers.cell_phone_s.cellphones_crawler import CellphonesSCrawler
 from crawlers.cell_phone_s.cellphones_config import CellphoneSConfig
+from crawlers.cell_phone_s.cellphones_product_crawler import CellphonesProductCrawler
 
 class CrawlRunner:
     """Điều phối chạy nhiều crawler khác nhau."""

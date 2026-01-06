@@ -78,7 +78,7 @@ def run(s3_uri: str):
 
     for key in json_keys:
         process_single_key(s3, writer, key)
-    
+
 def enrich_spec_keys(batch_size: int = 20):
     writer = PostgresWriter()
     enricher = SpecKeyEnricher(batch_size=batch_size)
@@ -86,7 +86,6 @@ def enrich_spec_keys(batch_size: int = 20):
     while True:
         # Lấy batch chưa enrich
         rows = writer.fetch_spec_keys_missing_enrichment(batch_size)
-
         if not rows:
             print("No more spec keys to enrich")
             break
@@ -94,9 +93,7 @@ def enrich_spec_keys(batch_size: int = 20):
         print(f"Enriching {len(rows)} spec keys")
 
         enriched = enricher.enrich_batch(rows)
-
         writer.update_spec_key_enrichment(enriched)
-
 
 if __name__ == "__main__":
     # run("s3://20251-data-science/output/")

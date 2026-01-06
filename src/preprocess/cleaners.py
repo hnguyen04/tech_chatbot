@@ -17,13 +17,32 @@ def normalize_url(url: str) -> str | None:
     return urlunparse(cleaned)
 
 
-def clean_price(price: str | None) -> str | None:
-    """Remove currency text/symbols and keep digits only."""
-    if not price:
+def clean_price(price) -> str | None:
+    """
+    Normalize price to digits-only string.
+    Accepts: str | int | float | list | None
+    """
+    if price is None:
         return None
+
+    # Nếu là list → lấy phần tử đầu (hoặc có thể min/max tuỳ bạn)
+    if isinstance(price, list):
+        if not price:
+            return None
+        price = price[0]
+
+    # Nếu là number → convert sang str
+    if isinstance(price, (int, float)):
+        price = str(int(price))
+
+    # Sau khi normalize, chỉ xử lý string
+    if not isinstance(price, str):
+        return None
+
     digits = re.findall(r"\d+", price)
     if not digits:
         return None
+
     return "".join(digits)
 
 
