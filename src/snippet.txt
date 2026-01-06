@@ -1,0 +1,300 @@
+﻿import streamlit as st
+import pandas as pd
+import plotly.express as px
+import numpy as np
+import psycopg2
+from dotenv import load_dotenv
+import os
+from datetime import datetime
+from PIL import Image, ImageFilter
+import io
+import sys
+from pathlib import Path
+import base64
+
+SRC_DIR = Path(__file__).resolve().parent
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from rag.unified_pipeline import UnifiedRAGPipeline
+from rag.config import TOP_K_RETRIEVE, TOP_N_RERANK
+
+# --- Page setup ---
+st.set_page_config(page_title="Tech Chatbot Dashboard", page_icon=":robot_face:", layout="wide")
+load_dotenv()
+
+# --- (A) Session state init ---
+if "sb_nav" not in st.session_state or st.session_state.sb_nav not in {"chat", "overview", "data", "settings"}:
+    st.session_state.sb_nav = "chat"
+if "ui_theme" not in st.session_state:
+    st.session_state.ui_theme = "Light"
+if st.session_state.ui_theme in {"Dark Mode", "Dark"}:
+    st.session_state.ui_theme = "Dark"
+elif st.session_state.ui_theme in {"Light Mode", "Light"}:
+    st.session_state.ui_theme = "Light"
+if "rag_top_k" not in st.session_state:
+    st.session_state.rag_top_k = TOP_K_RETRIEVE
+if "rag_top_n" not in st.session_state:
+    st.session_state.rag_top_n = TOP_N_RERANK
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "pending_prompt" not in st.session_state:
+    st.session_state.pending_prompt = None
+if "flt_start" not in st.session_state:
+    st.session_state.flt_start = None
+if "flt_end" not in st.session_state:
+    st.session_state.flt_end = None
+if "flt_cats" not in st.session_state:
+    st.session_state.flt_cats = None
+if "qs_loaded" not in st.session_state:
+    st.session_state.qs_loaded = False
+
+
+def _svg_data_uri(path: Path) -> str:
+    try:
+        data = path.read_bytes()
+        return "data:image/svg+xml;base64," + base64.b64encode(data).decode()
+    except Exception:
+        return ""
+
+
+CHAT_ICON = _svg_data_uri(SRC_DIR / "messages_9821623.svg")
+OVERVIEW_ICON = _svg_data_uri(SRC_DIR / "objects-column_10742904.svg")
+DATA_ICON = _svg_data_uri(SRC_DIR / "search_3917754.svg")
+SETTINGS_ICON = _svg_data_uri(SRC_DIR / "settings_17586903.svg")
+
+
+def _load_query_state():
+    params = st.query_params
+    sb = params.get("sb")
+    if sb in {"chat", "overview", "data", "settings"}:
+        st.session_state.sb_nav = sb
+    theme = params.get("theme")
+    if theme in {"Light", "Dark"}:
+        st.session_state.ui_theme = theme
+    try:
+        k = int(params.get("topk", 0))
+        if 1 <= k <= 50:
+            st.session_state.rag_top_k = k
+    except Exception:
+        pass
+    try:
+        n = int(params.get("topn", 0))
+        if 1 <= n <= 20:
+            st.session_state.rag_top_n = n
+    except Exception:
+        pass
+    start = params.get("start")
+    end = params.get("end")
+    try:
+        if start:
+            st.session_state.flt_start = datetime.fromisoformat(start).date()
+        if end:
+            st.session_state.flt_end = datetime.fromisoformat(end).date()
+    except Exception:
+        pass
+    cats = params.get("cats")
+    if cats:
+        st.session_state.flt_cats = cats.split(",")
+    st.session_state.qs_loaded = True
+
+
+def _sync_query_state():
+    st.query_params.update(
+        sb=st.session_state.sb_nav,
+        theme=st.session_state.ui_theme,
+        topk=st.session_state.rag_top_k,
+        topn=st.session_state.rag_top_n,
+        start=str(st.session_state.flt_start) if st.session_state.flt_start else "",
+        end=str(st.session_state.flt_end) if st.session_state.flt_end else "",
+        cats=",".join(st.session_state.flt_cats) if st.session_state.flt_cats else "",
+    )
+
+
+# --- Background helpers ---
+@st.cache_data
+def get_blurred_background(image_path, blur_radius=10):
+    try:
+        img = Image.open(image_path)
+        blurred_img = img.filter(ImageFilter.GaussianBlur(blur_radius))
+        buffered = io.BytesIO()
+        blurred_img.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        return img_str
+    except Exception:
+        return None
+
+
+base_dir = Path(__file__).resolve().parent
+bg_image_path = base_dir / "background.png"
+bg_base64 = get_blurred_background(str(bg_image_path), blur_radius=3) if bg_image_path.exists() else None
+
+if not st.session_state.qs_loaded:
+    _load_query_state()
+
+# --- Theme ---
+ui_theme = st.session_state.ui_theme
+is_dark = ui_theme == "Dark"
+
+if is_dark:
+    BG_COLOR = "#0E1117"
+    CARD_BG = "rgba(38, 39, 48, 0.85)"
+    TEXT_COLOR = "#FAFAFA"
+    SUB_TEXT = "#A3A8B8"
+    BORDER_COLOR = "rgba(255, 255, 255, 0.1)"
+    ACCENT_COLOR = "#3B82F6"
+    ICON_BOX_BG = "#1E3A8A"
+    HEADER_BG = "linear-gradient(135deg, rgba(30, 58, 138, 0.9) 0%, rgba(23, 37, 84, 0.9) 100%)"
+    PLOT_TEMPLATE = "plotly_dark"
+    BG_OVERLAY = "rgba(14, 17, 23, 0.85)"
+else:
+    BG_COLOR = "#F8F9FA"
+    CARD_BG = "rgba(255, 255, 255, 0.9)"
+    TEXT_COLOR = "#1E293B"
+    SUB_TEXT = "#64748B"
+    BORDER_COLOR = "rgba(0, 0, 0, 0.1)"
+    ACCENT_COLOR = "#0078D4"
+    ICON_BOX_BG = "#172554"
+    HEADER_BG = "linear-gradient(135deg, rgba(0, 120, 212, 0.9) 0%, rgba(0, 90, 158, 0.9) 100%)"
+    PLOT_TEMPLATE = "plotly_white"
+    BG_OVERLAY = "rgba(240, 244, 248, 0.85)"
+
+bg_css_rule = ""
+if bg_base64:
+    bg_css_rule = f"""
+    .stApp {{
+        background-image: linear-gradient({BG_OVERLAY}, {BG_OVERLAY}), url("data:image/png;base64,{bg_base64}");
+        background-attachment: fixed;
+        background-size: 100% auto;
+        background-position: top center;
+        background-repeat: no-repeat;
+    }}
+    """
+
+# --- (B) CSS ---
+st.markdown(
+    f"""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500;600;700&display=swap');
+
+    html, body, [class*="css"] {{
+        font-family: 'Inter', 'Noto Sans', 'Segoe UI', sans-serif;
+        color: {TEXT_COLOR};
+    }}
+    {bg_css_rule}
+    .stTabs {{ display: none; }}
+
+    /* Sidebar rail */
+    div[data-testid="stSidebar"] {{ background: transparent !important; padding: 0; }}
+    div[data-testid="stSidebar"] > div:first-child {{ padding: 0; }}
+    .sb-rail {{
+        background: #0B64D2;
+        padding: 14px 10px;
+        border-radius: 0 16px 16px 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+        width: 78px;
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        box-sizing: border-box;
+        z-index: 999;
+    }}
+    .sb-logo {{
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.95);
+        border: 2px solid rgba(255,255,255,0.2);
+        box-shadow: 0 6px 14px rgba(0,0,0,0.25);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-size: cover;
+        background-position: center;
+    }}
+    .sb-rail [data-testid="stRadio"] {{ margin: 0; width: 100%; }}
+    .sb-rail [role="radiogroup"] {{
+        gap: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }}
+    .sb-rail [role="radiogroup"] label {{
+        margin: 0;
+        width: 58px;
+        height: 58px;
+    }}
+    .sb-rail [data-baseweb="radio"] {{
+        padding: 0;
+        margin: 0;
+    }}
+    .sb-rail [data-baseweb="radio"] input {{ display: none; }}
+    .sb-rail [data-baseweb="radio"] > div {{
+        width: 58px;
+        height: 58px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+        transition: all 0.2s ease;
+        background-repeat: no-repeat;
+        background-size: 28px;
+        background-position: center;
+        filter: grayscale(1) brightness(1.1);
+    }}
+    .sb-rail [data-baseweb="radio"] > div:hover {{
+        background: rgba(255, 255, 255, 0.16);
+        transform: translateY(-1px);
+    }}
+    .sb-rail [data-baseweb="radio"]:has(input:checked) > div {{
+        background-color: rgba(255, 255, 255, 0.95);
+        border-color: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+        filter: none;
+    }}
+    /* Fallback via nth-child to ensure icons render */
+    .sb-rail [role="radiogroup"] label:nth-child(1) > div {{ background-image: url("{CHAT_ICON}"); }}
+    .sb-rail [role="radiogroup"] label:nth-child(2) > div {{ background-image: url("{OVERVIEW_ICON}"); }}
+    .sb-rail [role="radiogroup"] label:nth-child(3) > div {{ background-image: url("{DATA_ICON}"); }}
+    .sb-rail [role="radiogroup"] label:nth-child(4) > div {{ background-image: url("{SETTINGS_ICON}"); }}
+
+    .history-card {{
+        background: {CARD_BG};
+        border: 1px solid {BORDER_COLOR};
+        border-radius: 16px;
+        padding: 12px;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+    }}
+    .history-row {{
+        border: 1px solid {BORDER_COLOR};
+        border-radius: 12px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+        background: {CARD_BG};
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.15s ease;
+    }}
+    .history-row:hover {{
+        border-color: {ACCENT_COLOR};
+        box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+        transform: translateY(-1px);
+    }}
+    .history-title {{ font-weight: 700; color: {TEXT_COLOR}; font-size: 14px; margin: 0; }}
+    .history-sub {{ color: {SUB_TEXT}; font-size: 12px; margin: 0; }}
+
+    .main-header {{
+        background: {HEADER_BG};
+        padding: 24px;
+        border-radius: 16px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        text-align: center;
+        border: 1px solid {BORDER_COLOR};
