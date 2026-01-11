@@ -29,7 +29,7 @@ ZILLIZ_CLOUD_TOKEN = os.getenv("ZILLIZ_CLOUD_TOKEN") or os.getenv("ZILLIZIO_API_
 # Vector Store Configuration (Milvus only)
 
 # Retrieval Configuration
-TOP_K_RETRIEVE = int(os.getenv("TOP_K_RETRIEVE", "20"))  # Number of docs to retrieve
+TOP_K_RETRIEVE = int(os.getenv("TOP_K_RETRIEVE", "10"))  # Number of docs to retrieve per sub-query
 TOP_N_RERANK = int(os.getenv("TOP_N_RERANK", "5"))  # Number of docs after reranking
 
 # Chunking Configuration
@@ -44,7 +44,10 @@ POSTGRES_DB_USER = os.getenv("POSTGRES_DB_USER")
 POSTGRES_DB_PASSWORD = os.getenv("POSTGRES_DB_PASSWORD")
 
 # Device Configuration
-DEVICE = os.getenv("DEVICE", "cpu")  # cpu or cuda
+DEVICE = os.getenv("DEVICE", "cpu")  # cpu or cuda or mps
+
+# Reranking Configuration
+ENABLE_RERANKING = os.getenv("ENABLE_RERANKING", "true").lower() == "true"  # Set to false to disable
 
 # Evaluation Configuration
 EVAL_DATASET_PATH = os.getenv("EVAL_DATASET_PATH", "data/eval_dataset.json")

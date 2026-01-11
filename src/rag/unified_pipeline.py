@@ -3,13 +3,14 @@ Unified RAG Pipeline using the production Vietnamese embeddings
 Works with the tech_embeddings collection from chunk_embedding pipeline
 """
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import List, Dict, Optional, Set
 from langchain_core.documents import Document
 from rag.vietnamese_retriever import VietnameseRetriever
 from rag.reranker import QwenReranker
 from rag.llm_service import GeminiLLMService
-from rag.config import TOP_K_RETRIEVE, TOP_N_RERANK, MILVUS_COLLECTION_NAME
+from rag.config import TOP_K_RETRIEVE, TOP_N_RERANK, MILVUS_COLLECTION_NAME, ENABLE_RERANKING
 from rag.utils import reciprocal_rank_fusion
 from storage.postgres_client import PostgresClient
 
@@ -39,12 +40,63 @@ class UnifiedRAGPipeline:
         
         target_collection = collection_name or MILVUS_COLLECTION_NAME
         self.retriever = retriever or VietnameseRetriever(collection_name=target_collection)
-        self.reranker = reranker or QwenReranker()
+        
+        # Only load reranker if enabled (saves memory and startup time)
+        if ENABLE_RERANKING:
+            self.reranker = reranker or QwenReranker()
+        else:
+            self.reranker = None
+            print("Reranking disabled (ENABLE_RERANKING=false)")
+        
         self.llm_service = llm_service or GeminiLLMService()
         self.pg_client = PostgresClient()
         self.conversation_history: List[Dict[str, str]] = []
         
         print("Unified RAG Pipeline initialized")
+    
+    def _is_simple_query(self, query: str) -> bool:
+        """
+        Detect if a query is simple (single product lookup) vs complex (needs decomposition).
+        
+        Simple: "iPhone 15", "Galaxy S24 Ultra specs"
+        Complex: "so sánh iPhone vs Samsung", "điện thoại tốt nhất dưới 10 triệu"
+        
+        Returns:
+            True if simple lookup, False if complex (needs decomposition)
+        """
+        query_lower = query.lower().strip()
+        
+        # COMPLEX: Comparison indicators (mentions 2+ products)
+        comparison_keywords = ["so sánh", "compare", " vs ", " với ", " và ", " hay ", " or "]
+        for kw in comparison_keywords:
+            if kw in query_lower:
+                return False
+        
+        # COMPLEX: Recommendation/ranking queries
+        recommendation_keywords = [
+            "nên mua", "nên chọn", "recommend", "gợi ý",
+            "top ", "best", "tốt nhất", "rẻ nhất", "đáng mua",
+            "tư vấn", "chọn gì", "mua gì"
+        ]
+        for kw in recommendation_keywords:
+            if kw in query_lower:
+                return False
+        
+        # COMPLEX: Price/constraint queries
+        constraint_keywords = ["dưới", "under", "trên", "above", "từ", "đến", "triệu", "nghìn", "k "]
+        for kw in constraint_keywords:
+            if kw in query_lower:
+                return False
+        
+        # COMPLEX: Analysis queries  
+        analysis_keywords = ["ưu điểm", "nhược điểm", "pros", "cons", "đánh giá", "review"]
+        for kw in analysis_keywords:
+            if kw in query_lower:
+                return False
+        
+        # SIMPLE: Everything else is likely a product lookup
+        # e.g., "iPhone 15 Pro Max", "Samsung Galaxy S24 Ultra", "thông số Macbook"
+        return True
     
     def _enrich_metadata(self, documents: List[Document]) -> List[Document]:
         """
@@ -204,6 +256,60 @@ class UnifiedRAGPipeline:
                 
         return final_docs
 
+    def _parallel_hybrid_search(self, sub_queries: List[str], top_k: int) -> List[Document]:
+        """
+        Thread-safe parallel hybrid search.
+        
+        Safety: Each thread works independently on its own query.
+        Aggregation and deduplication happen AFTER all futures complete
+        to avoid race conditions on shared state.
+        
+        Args:
+            sub_queries: List of search queries
+            top_k: Number of documents to retrieve per query
+            
+        Returns:
+            Deduplicated list of documents
+        """
+        # Single query - no parallelization needed
+        if len(sub_queries) == 1:
+            return self._hybrid_search(sub_queries[0], top_k)
+        
+        all_results = []  # Collect all results first (no shared state during parallel execution)
+        
+        with ThreadPoolExecutor(max_workers=min(3, len(sub_queries))) as executor:
+            # Submit all search tasks
+            future_to_query = {
+                executor.submit(self._hybrid_search, q, top_k): q 
+                for q in sub_queries
+            }
+            
+            # Wait for ALL futures to complete, then collect results
+            for future in as_completed(future_to_query):
+                query = future_to_query[future]
+                try:
+                    docs = future.result()
+                    all_results.extend(docs)  # Safe: single-threaded aggregation
+                except Exception as e:
+                    print(f"Search error for query '{query}': {e}")
+                    continue
+        
+        # Deduplicate in single thread (no race condition)
+        seen_ids: Set[str] = set()
+        unique_docs = []
+        for doc in all_results:
+            rid = doc.metadata.get("record_id")
+            if rid:
+                rid_str = str(rid)
+                if rid_str not in seen_ids:
+                    seen_ids.add(rid_str)
+                    unique_docs.append(doc)
+            else:
+                # Docs without ID - include them (rare case)
+                unique_docs.append(doc)
+        
+        return unique_docs
+
     def _extract_relevant_indices(self, text: str) -> List[int]:
         """
         Extract relevant source indices from LLM response
@@ -229,7 +335,8 @@ class UnifiedRAGPipeline:
         top_k: int = TOP_K_RETRIEVE,
         top_n: int = TOP_N_RERANK,
         use_history: bool = True,
-        enrich_metadata: bool = True
+        enrich_metadata: bool = True,
+        skip_decomposition: Optional[bool] = None
     ) -> Dict:
         """
         Process a query through the RAG pipeline with Hybrid Search and Query Decomposition
@@ -240,33 +347,27 @@ class UnifiedRAGPipeline:
             top_n: Number of documents after reranking
             use_history: Whether to use conversation history
             enrich_metadata: Whether to fetch full product metadata
+            skip_decomposition: If True, skip decomposition. If None, auto-detect based on query complexity.
             
         Returns:
             Dictionary with answer, sources, and metadata
         """
-        # Step 1: Query Decomposition
+        # Step 1: Query Decomposition (auto-detect if not specified)
         print(f"\nProcessing Query: {query}")
-        sub_queries = self.llm_service.generate_search_queries(query)
-        print(f"Generated sub-queries: {sub_queries}")
         
-        # Step 2: Hybrid Search & Aggregation
-        all_docs = []
-        seen_ids = set()
+        # Auto-detect query complexity if not explicitly set
+        if skip_decomposition is None:
+            skip_decomposition = self._is_simple_query(query)
         
-        for sub_q in sub_queries:
-            docs = self._hybrid_search(sub_q, top_k)
-            for doc in docs:
-                # Use record_id for deduplication
-                rid = doc.metadata.get("record_id")
-                # If no record_id, use content hash or skip? Milvus/Postgres should have IDs.
-                if rid:
-                    rid = str(rid)
-                    if rid not in seen_ids:
-                        seen_ids.add(rid)
-                        all_docs.append(doc)
-                else:
-                    # Fallback for docs without ID (unlikely)
-                    all_docs.append(doc)
+        if skip_decomposition:
+            sub_queries = [query]
+            print("Simple query detected - skipping decomposition")
+        else:
+            sub_queries = self.llm_service.generate_search_queries(query)
+            print(f"Generated sub-queries: {sub_queries}")
+        
+        # Step 2: Parallel Hybrid Search & Aggregation (thread-safe)
+        all_docs = self._parallel_hybrid_search(sub_queries, top_k)
         
         print(f"Aggregated {len(all_docs)} unique documents from hybrid search")
         
@@ -279,16 +380,23 @@ class UnifiedRAGPipeline:
                 "query": query
             }
         
-        # Step 3: Enrich metadata if requested
-        if enrich_metadata:
-            print("Enriching metadata from PostgreSQL...")
-            all_docs = self._enrich_metadata(all_docs)
+        # Step 3: Pre-filter to reasonable size, then enrich
+        # Limit to top 20 candidates max to balance speed vs coverage
+        max_candidates = min(len(all_docs), 20)
+        candidates = all_docs[:max_candidates]
         
-        # Step 4: Rerank documents
-        # print(f"Reranking to top-{top_n}...")
-        # reranked_docs = self.reranker.rerank(query, all_docs, top_n=top_n)
-        # print(f"Reranked to {len(reranked_docs)} documents")
-        reranked_docs = all_docs[:top_n]
+        if enrich_metadata:
+            print(f"Enriching {len(candidates)} documents...")
+            candidates = self._enrich_metadata(candidates)
+        
+        # Step 4: Rerank or take top-N
+        if ENABLE_RERANKING and self.reranker:
+            print(f"Reranking to top-{top_n}...")
+            reranked_docs = self.reranker.rerank(query, candidates, top_n=top_n)
+            print(f"Reranked to {len(reranked_docs)} documents")
+        else:
+            print(f"Taking top-{top_n} by score...")
+            reranked_docs = candidates[:top_n]
         
         # Step 5: Format context for LLM
         context = self._format_context(reranked_docs)
@@ -409,6 +517,118 @@ class UnifiedRAGPipeline:
     def set_history(self, history: List[Dict[str, str]]):
         """Set conversation history"""
         self.conversation_history = history.copy()
+    
+    def query_for_eval(
+        self,
+        query: str,
+        top_k: int = TOP_K_RETRIEVE,
+        top_n: int = TOP_N_RERANK,
+        skip_decomposition: bool = False
+    ) -> Dict:
+        """
+        Process a query and return additional data needed for evaluation.
+        
+        This method returns more detailed information than query() for
+        evaluation purposes, including retrieved IDs and context.
+        
+        Args:
+            query: User query
+            top_k: Number of documents to retrieve per sub-query
+            top_n: Number of documents after reranking
+            skip_decomposition: If True, skip query decomposition
+            
+        Returns:
+            Dictionary with answer, sources, retrieved_ids, context, etc.
+        """
+        # Step 1: Query Decomposition
+        if skip_decomposition:
+            sub_queries = [query]
+        else:
+            sub_queries = self.llm_service.generate_search_queries(query)
+        
+        # Step 2: Hybrid Search
+        all_docs = self._parallel_hybrid_search(sub_queries, top_k)
+        
+        # Track retrieved IDs before enrichment
+        retrieved_ids = []
+        for doc in all_docs:
+            rid = doc.metadata.get("record_id")
+            if rid:
+                retrieved_ids.append(int(rid) if isinstance(rid, str) else rid)
+        
+        if not all_docs:
+            return {
+                "answer": "Xin lỗi, tôi không tìm thấy thông tin liên quan.",
+                "sources": [],
+                "retrieved_ids": [],
+                "reranked_ids": [],
+                "context": "",
+                "sub_queries": sub_queries,
+                "query": query
+            }
+        
+        # Step 3: Pre-filter and enrich (limit to 20 for speed)
+        max_candidates = min(len(all_docs), 20)
+        candidates = all_docs[:max_candidates]
+        candidates = self._enrich_metadata(candidates)
+        
+        # Step 4: Rerank or take top-N
+        if ENABLE_RERANKING and self.reranker:
+            reranked_docs = self.reranker.rerank(query, candidates, top_n=top_n)
+        else:
+            reranked_docs = candidates[:top_n]
+        
+        # Track reranked IDs
+        reranked_ids = []
+        for doc in reranked_docs:
+            rid = doc.metadata.get("record_id")
+            if rid:
+                reranked_ids.append(int(rid) if isinstance(rid, str) else rid)
+        
+        # Step 5: Format context
+        context = self._format_context(reranked_docs)
+        
+        # Step 6: Generate response
+        from datetime import datetime
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        full_answer = self.llm_service.generate_response(
+            prompt=query,
+            context=context,
+            conversation_history=None,  # No history for eval
+            current_date=current_date
+        )
+        
+        # Parse relevant indices
+        relevant_indices = self._extract_relevant_indices(full_answer)
+        
+        # Clean answer
+        import re
+        answer = re.sub(r"RELEVANT_SOURCE_INDICES:.*", "", full_answer).strip()
+        
+        # Prepare sources
+        sources = []
+        for doc in reranked_docs:
+            sources.append({
+                "title": doc.metadata.get("title", "Unknown"),
+                "url": doc.metadata.get("source_url", ""),
+                "record_id": doc.metadata.get("record_id", ""),
+                "score": doc.metadata.get("score", 0),
+                "brand": doc.metadata.get("brand", ""),
+                "model": doc.metadata.get("model", ""),
+                "price": doc.metadata.get("price", ""),
+            })
+        
+        return {
+            "answer": answer,
+            "sources": sources,
+            "retrieved_ids": retrieved_ids,
+            "reranked_ids": reranked_ids,
+            "context": context,
+            "sub_queries": sub_queries,
+            "query": query,
+            "retrieved_count": len(all_docs),
+            "reranked_count": len(reranked_docs)
+        }
     
     def __del__(self):
         """Cleanup PostgreSQL connection"""

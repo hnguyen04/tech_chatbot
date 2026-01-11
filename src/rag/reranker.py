@@ -11,39 +11,67 @@ from rag.config import QWEN_RERANKER_MODEL, DEVICE, TOP_N_RERANK
 class QwenReranker:
     """
     Reranker using Qwen 3 model (CausalLM-based reranker)
+    
+    Note: MPS (Apple Silicon) is NOT supported for Qwen reranker due to 
+    large vocabulary size exceeding MPS tensor dimension limits.
+    Falls back to CPU with optimizations.
     """
     
     def __init__(self, model_name: str = QWEN_RERANKER_MODEL, device: str = DEVICE):
         """
-        Initialize Qwen reranker
+        Initialize Qwen reranker.
         
         Args:
             model_name: Model name/path
-            device: Device to use (cpu/cuda)
+            device: Device to use. Note: MPS is not supported for large vocab models.
         """
         self.model_name = model_name
-        self.device = device
         self.max_length = 8192
+        
+        # MPS doesn't work with Qwen's large vocabulary (~150k tokens)
+        # Error: "MPSGraph does not support tensor dims larger than INT_MAX"
+        # Force CPU for Qwen reranker, use CUDA only if available
+        if device == "mps":
+            print("Reranker: MPS not supported for Qwen (vocab too large), using CPU")
+            device = "cpu"
+        elif device is None or device == "":
+            if torch.cuda.is_available():
+                device = "cuda"
+                print("Reranker: Using CUDA GPU")
+            else:
+                device = "cpu"
+                print("Reranker: Using CPU")
+        else:
+            print(f"Reranker: Using device: {device}")
+        
+        self.device = device
         
         print(f"Loading Qwen Reranker: {model_name} on {device}")
         
-        # Load tokenizer and model as CausalLM (not SequenceClassification)
+        # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name, 
             trust_remote_code=True, 
             padding_side='left'
         )
         
-        # Use bfloat16 or float16 if on CUDA for memory efficiency, else float32
-        torch_dtype = torch.float16 if device == "cuda" else torch.float32
+        # Use float16 for CUDA, float32 for CPU
+        # Note: float16 on CPU can be slow, but float32 uses more memory
+        if device == "cuda":
+            torch_dtype = torch.float16
+        else:
+            torch_dtype = torch.float32
         
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name, 
             trust_remote_code=True,
-            torch_dtype=torch_dtype
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=True  # Optimize memory for CPU
         )
         self.model.to(device)
         self.model.eval()
+        
+        print(f"Reranker ready (dtype={torch_dtype}, device={device})")
         
         # Setup specific tokens for Qwen3-Reranker
         self.token_false_id = self.tokenizer.convert_tokens_to_ids("no")

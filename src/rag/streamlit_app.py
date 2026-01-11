@@ -1,6 +1,6 @@
 """
 Streamlit UI for RAG Chatbot
-Uses UnifiedRAGPipeline with existing Vietnamese embeddings
+Uses SmartRAGPipeline with Fast and Deep modes
 """
 import sys
 import os
@@ -14,15 +14,15 @@ if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
 import streamlit as st
-from rag.unified_pipeline import UnifiedRAGPipeline
+from rag.smart_pipeline import SmartRAGPipeline
 from rag.config import TOP_K_RETRIEVE, TOP_N_RERANK
 
 
 def initialize_session_state():
     """Initialize session state variables"""
     if "pipeline" not in st.session_state:
-        # Use UnifiedRAGPipeline with existing Vietnamese embeddings
-        st.session_state.pipeline = UnifiedRAGPipeline()
+        # Use SmartRAGPipeline with Fast/Deep mode support
+        st.session_state.pipeline = SmartRAGPipeline()
     
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -32,6 +32,9 @@ def initialize_session_state():
     
     if "top_n" not in st.session_state:
         st.session_state.top_n = TOP_N_RERANK
+    
+    if "search_mode" not in st.session_state:
+        st.session_state.search_mode = "fast"
 
 
 def clean_json_string(json_str: str) -> str:
@@ -216,6 +219,21 @@ def main():
     with st.sidebar:
         st.header("Cấu hình")
         
+        # Search mode toggle
+        st.markdown("### Chế độ tìm kiếm")
+        mode_option = st.radio(
+            "Chọn chế độ:",
+            ["⚡ Fast (Nhanh)", "🔍 Deep (Agentic)"],
+            index=0 if st.session_state.search_mode == "fast" else 1,
+            help="Fast: Tìm kiếm đơn giản, nhanh. Deep: Suy luận nhiều bước, phù hợp câu hỏi phức tạp."
+        )
+        st.session_state.search_mode = "fast" if "Fast" in mode_option else "deep"
+        
+        if st.session_state.search_mode == "deep":
+            st.info("🤖 Chế độ Deep sử dụng AI agent để suy luận nhiều bước. Có thể mất thêm thời gian.")
+        
+        st.markdown("---")
+        
         top_k = st.slider(
             "Top K (Tìm kiếm)",
             min_value=5,
@@ -241,7 +259,8 @@ def main():
         
         st.markdown("---")
         st.markdown("### Thông tin hệ thống")
-        st.info(f"Truy xuất: Top {top_k} → Xếp hạng: Top {top_n}")
+        mode_display = "Deep (Agentic)" if st.session_state.search_mode == "deep" else "Fast"
+        st.info(f"Chế độ: {mode_display}\nTruy xuất: Top {top_k} → Xếp hạng: Top {top_n}")
     
     # Main chat interface
     for message in st.session_state.messages:
@@ -279,10 +298,12 @@ def main():
         
         # Generate response
         with st.chat_message("assistant"):
-            with st.spinner("Đang suy nghĩ..."):
+            spinner_text = "Đang suy nghĩ..." if st.session_state.search_mode == "fast" else "Đang suy luận (Deep mode)..."
+            with st.spinner(spinner_text):
                 try:
                     result = st.session_state.pipeline.query(
                         query=prompt,
+                        mode=st.session_state.search_mode,
                         top_k=st.session_state.top_k,
                         top_n=st.session_state.top_n,
                         use_history=True
@@ -290,6 +311,7 @@ def main():
                     
                     answer = result.get("answer", "Xin lỗi, tôi không thể tạo phản hồi.")
                     sources = result.get("sources", [])
+                    mode_used = result.get("mode", "fast")
                     
                     # 1. Render Gallery
                     render_product_gallery(sources)
@@ -301,7 +323,7 @@ def main():
                     if sources:
                         with st.expander(f"Nguồn trích dẫn ({len(sources)} tài liệu)"):
                             for i, source in enumerate(sources, 1):
-                                st.markdown(f"**{i}. {source['title']}**")
+                                st.markdown(f"**{i}. {source.get('title', 'Unknown')}**")
                                 if source.get("url"):
                                     st.markdown(f"[{source['url']}]({source['url']})")
                                 st.markdown(f"{source.get('content_preview', '')[:200]}...")
@@ -315,8 +337,12 @@ def main():
                     })
                     
                     # Metadata
-                    st.caption(f"Tìm kiếm: {result.get('retrieved_count', 0)} | "
-                              f"Reranked: {result.get('reranked_count', 0)}")
+                    mode_label = "🔍 Deep" if mode_used == "deep" else "⚡ Fast"
+                    if mode_used == "deep":
+                        st.caption(f"{mode_label} | Iterations: {result.get('iterations', 0)}")
+                    else:
+                        st.caption(f"{mode_label} | Tìm kiếm: {result.get('retrieved_count', 0)} | "
+                                  f"Reranked: {result.get('reranked_count', 0)}")
                 
                 except Exception as e:
                     error_msg = f"Error: {str(e)}"

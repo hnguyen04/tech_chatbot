@@ -3,42 +3,32 @@ Prompt templates for the RAG system
 """
 
 # Query Transformation Prompts
-QUERY_DECOMPOSITION_PROMPT = """You are an expert search query generator.
-Your goal is to break down a complex user question into a concise set of sub-queries that cover the most critical aspects.
+QUERY_DECOMPOSITION_PROMPT = """Extract product names or key search terms from the user query.
 
-**Constraints:**
-1.  **Limit to maximum 3 sub-queries**.
-2.  **Prioritize Comparison and Specs** queries.
-
-Follow these strategies:
-1. **Deconstruct Concepts**: If the user asks for "gaming", ask for "performance", "chip".
-2. **Handle Constraints**: If "under 5 million", generate queries for that price segment.
-3. **Entity Separation**: For comparisons, query each product individually.
+**Rules:**
+1. Maximum 2 queries
+2. For comparisons: extract each product name separately
+3. Keep queries SHORT (2-4 words max)
+4. Use product names directly, not paraphrased sentences
 
 User Query: {query}
 
-Output a JSON object with a key "queries" containing the list of strings.
+Output JSON: {{"queries": ["query1", "query2"]}}
 
 Examples:
 
-Query: "So sánh camera iPhone 15 và Samsung S24"
-Output: {{"queries": ["thông số camera iPhone 15", "đánh giá camera Samsung Galaxy S24", "so sánh ảnh chụp iPhone 15 và Samsung S24"]}}
+Query: "So sánh iPhone 15 và Samsung S24 Ultra"
+Output: {{"queries": ["iPhone 15", "Samsung S24 Ultra"]}}
 
-Query: "Điện thoại nào chơi Genshin mượt giá rẻ dưới 5 triệu?"
-Output: {{"queries": ["top điện thoại chơi game tốt dưới 5 triệu", "cấu hình tối thiểu chơi Genshin Impact", "đánh giá hiệu năng điện thoại giá rẻ 2024"]}}
+Query: "Điện thoại chơi game tốt dưới 5 triệu"
+Output: {{"queries": ["điện thoại gaming dưới 5 triệu"]}}
 
-Query: "iPhone 13 cũ giờ giá bao nhiêu, có nên mua không?"
-Output: {{"queries": ["giá iPhone 13 cũ hiện nay", "lưu ý khi mua iPhone 13 cũ", "đánh giá iPhone 13 trong năm 2024"]}}
+Query: "iPhone 13 cũ giá bao nhiêu"
+Output: {{"queries": ["iPhone 13"]}}
+
+Query: "Laptop văn phòng tốt nhất 2024"
+Output: {{"queries": ["laptop văn phòng 2024"]}}
 """
-
-HYDE_PROMPT = """You are a tech expert.
-Please write a short, hypothetical passage that answers the following question. 
-The passage should contain the specific technical keywords, specifications, and terminology that would likely appear in a real product review or specification sheet.
-Do not verify the facts, just halluciation a plausible answer structure to help with vector matching.
-
-Question: {query}
-
-Hypothetical Answer:"""
 
 # Generation Prompts
 RAG_SYSTEM_PROMPT = """You are a knowledgeable and precise technology expert assistant.
@@ -115,3 +105,47 @@ Context:
 RAG_USER_PROMPT = """Question: {query}
 
 Answer:"""
+
+# AgenticRAG Prompts
+AGENT_PLANNING_PROMPT = """You are a tech product assistant with access to tools.
+
+Available Tools:
+{tools}
+
+Current Context (information gathered so far):
+{context}
+
+User Question: {query}
+
+Decide your NEXT SINGLE action. You can only do ONE action at a time.
+
+CRITICAL RULES:
+1. NEVER repeat a search you already did. Check "Current Context" above - if you already searched for a product, DO NOT search for it again.
+2. For comparison queries (e.g., "So sánh iPhone 15 và S24"):
+   - First use keyword_search for the first product
+   - Then keyword_search for the second product (in next iteration)  
+   - Once you have results for BOTH products, output ANSWER (do not search again)
+3. If Current Context already contains information about all products mentioned in the query, output ANSWER immediately.
+
+Output EXACTLY ONE JSON object (no multiple objects):
+{{"action": "TOOL", "tool": "tool_name", "params": {{"param_name": "value"}}}}
+OR
+{{"action": "ANSWER"}}
+
+Important: Output only ONE JSON object, not multiple. Do NOT repeat searches.
+"""
+
+AGENT_REFLECTION_PROMPT = """Based on the retrieved information, do you have enough to answer the user's question?
+
+User Question: {query}
+
+Information gathered:
+{context}
+
+Consider:
+- Do you have specific product details requested?
+- For comparisons, do you have info on ALL products mentioned?
+- Is the information relevant and sufficient?
+
+Output JSON: {{"enough": true, "reason": "..."}} or {{"enough": false, "reason": "..."}}
+"""

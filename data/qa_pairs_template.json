@@ -1,0 +1,26 @@
+[
+  {
+    "question": "iPhone 15 Pro Max giá bao nhiêu?",
+    "answer": "iPhone 15 Pro Max có giá khoảng 28.990.000 VNĐ tại Thế Giới Di Động, tùy thuộc vào dung lượng và khuyến mãi.",
+    "relevant_product_ids": [123, 456],
+    "query_type": "simple"
+  },
+  {
+    "question": "So sánh camera Samsung Galaxy S24 Ultra và iPhone 15 Pro Max",
+    "answer": "Samsung S24 Ultra có camera 200MP với zoom quang 10x, trong khi iPhone 15 Pro Max có camera 48MP với zoom quang 5x. S24 Ultra có zoom xa tốt hơn, iPhone có màu sắc tự nhiên hơn.",
+    "relevant_product_ids": [789, 101],
+    "query_type": "comparison"
+  },
+  {
+    "question": "Điện thoại chơi game tốt dưới 10 triệu?",
+    "answer": "Một số điện thoại chơi game tốt dưới 10 triệu: Redmi Note 13 Pro, POCO X6, Samsung Galaxy A54... với chip Snapdragon 7 Gen 1 hoặc tương đương.",
+    "relevant_product_ids": [201, 202, 203],
+    "query_type": "constraint"
+  },
+  {
+    "question": "Nên mua điện thoại nào chụp ảnh đẹp?",
+    "answer": "Nếu ưu tiên chụp ảnh, có thể xem xét: iPhone 15 Pro (màu tự nhiên), Samsung S24 Ultra (zoom xa), Pixel 8 Pro (AI camera). Tùy ngân sách và nhu cầu cụ thể.",
+    "relevant_product_ids": [301, 302, 303],
+    "query_type": "recommendation"
+  }
+]
